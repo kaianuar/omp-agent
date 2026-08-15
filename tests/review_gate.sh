@@ -28,13 +28,21 @@ OPENROUTER_URL="https://openrouter.ai/api/v1/chat/completions"
 
 echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s, max_tokens=${CRITIC_MAX_TOKENS})"
 
-# OpenRouter key — use ONLY the omp session env (OPENROUTER_API_KEY). Do NOT fall
-# back to ~/.hermes/.env: a cloned repo sets up OpenRouter in its own env, not in
-# Hermes's file. Run this from within omp (or export the var) so the key is present.
+# Load the project's .env — the ONLY env this pipeline reads (per project setup:
+# keys live in the repo's .env, not in Hermes's file). This puts OPENROUTER_API_KEY
+# etc. into scope whether run via run-gates.sh or directly in omp.
+if [ -f "$PROJ_ROOT/.env" ]; then
+  set -a; # shellcheck disable=SC1091
+  . "$PROJ_ROOT/.env"
+  set +a
+fi
+
+# OpenRouter key — read from the environment (which we just loaded from .env).
+# Do NOT fall back to ~/.hermes/.env: a cloned repo sets up OpenRouter in the
+# project's .env, not in Hermes's file.
 OR_KEY="${OPENROUTER_API_KEY:-}"
 if [ -z "$OR_KEY" ]; then
-  echo "xx OPENROUTER_API_KEY not set in the environment. Run this gate from within omp"
-  echo "   (which has the key in its env) or export OPENROUTER_API_KEY first."
+  echo "xx OPENROUTER_API_KEY not set. Add it to $PROJ_ROOT/.env (the project .env this pipeline reads)."
   exit 1
 fi
 [ "${REVIEW_DEBUG:-0}" = "1" ] && echo ">> using OPENROUTER_API_KEY from the environment"
