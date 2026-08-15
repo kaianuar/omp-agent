@@ -43,16 +43,20 @@ The pipeline is driven by **`PIPELINE.md`** (the operating loop) + **`requiremen
 **Interactive (recommended)** — omp plans, waits for your approval, builds, gates,
 and stops at the steer checkpoint for your sign-off:
 ```bash
-omp --model <builder-model>
-@PIPELINE.md
-@requirements.md
+omp --model <builder-model> \
+    --append-system-prompt=PIPELINE.md \
+    --append-system-prompt=requirements.md
 ```
-(You'll type `@PIPELINE.md` then `@requirements.md` as your first messages, or put
-both on the command line. omp loads them as context, then follows the loop.)
+(Loading the two files as context means omp follows the PIPELINE loop against your
+goal. The `--append-system-prompt=` form avoids the leading-`@` arg, which trips
+zsh's auto-correct. Inside an omp session you can also just type `@PIPELINE.md` and
+`@requirements.md` to load them.)
 
 **One-shot / non-interactive** (fires and prints, no waiting):
 ```bash
-omp --model <builder-model> --print @PIPELINE.md @requirements.md
+omp --model <builder-model> --print \
+    --append-system-prompt=PIPELINE.md \
+    --append-system-prompt=requirements.md
 ```
 
 **Builder model:** use your validated builder, e.g. `xiaomi-token-plan-sgp/mimo-v2.5-pro`,
@@ -112,6 +116,7 @@ execute and exit, but you'll want to supervise the gates.
 | Symptom | Fix |
 |---|---|
 | `omp: command not found` | `export PATH="$HOME/.bun/bin:$PATH"` |
+| zsh asks `correct '@PIPELINE.md' to 'PIPELINE.md'?` | zsh auto-correct — answer `n`, or use `--append-system-prompt=PIPELINE.md` (no leading `@`), or `unsetopt correct_all` |
 | Empty model output / "finish: length" | needs higher `max_tokens` (>=4000) for reasoning models |
 | Gate says "0 suites run" | put test files at the repo root / sub-dirs the gate checks (client, server) |
 | Critic returns nothing | CRITIC_MODEL not set / keys missing; ensure OpenRouter key present |
