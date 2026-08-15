@@ -21,11 +21,12 @@ PROJ_ROOT="$(pwd)"
 DIFF_FILE="${1:-/tmp/review.diff}"
 CRITIC_MODEL="${CRITIC_MODEL:-z-ai/glm-5.2}"        # OpenRouter model id
 CRITIC_TIMEOUT="${CRITIC_TIMEOUT:-300}"             # seconds; large diffs need headroom
+CRITIC_MAX_TOKENS="${CRITIC_MAX_TOKENS:-16000}"     # high: reasoning models burn tokens thinking and return empty if too low
 CRITIC_STANDARD="${CRITIC_STANDARD:-production}"    # production | mvp
 CRITIC_REQUIREMENTS="${CRITIC_REQUIREMENTS:-requirements.md}"  # acceptance/scope context
 OPENROUTER_URL="https://openrouter.ai/api/v1/chat/completions"
 
-echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s)"
+echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s, max_tokens=${CRITIC_MAX_TOKENS})"
 
 # OpenRouter key
 OR_KEY="${OPENROUTER_API_KEY:-}"
@@ -54,9 +55,9 @@ fi
 
 # Build the JSON request with the review prompt + requirements + diff (max_tokens
 # generous for reasoning models; not streamed).
-node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" <<'NODE' > /tmp/review_request.json
+node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" <<'NODE' > /tmp/review_request.json
 const fs=require('fs');
-const [ , , diffFile, model, standard, reqFile ]=process.argv;
+const [ , , diffFile, model, standard, reqFile, maxTokens ]=process.argv;
 const diff=fs.readFileSync(diffFile,'utf8');
 let req='';
 try { req=fs.readFileSync(reqFile,'utf8').slice(0,8000); } catch(e){}
@@ -83,7 +84,7 @@ ${diff}`;
 process.stdout.write(JSON.stringify({
   model,
   messages:[{role:'user',content:prompt}],
-  max_tokens:5000,
+  max_tokens:Number(maxTokens||16000),
   temperature:0.2
 }));
 NODE
@@ -122,11 +123,14 @@ if [ "$RC" -ne 0 ]; then
   exit 1
 fi
 
-# Verdict = the LAST non-empty line that is exactly PASS or FAIL (case-insensitive).
-VERDICT="$(grep -iE '^[[:space:]]*(PASS|FAIL)[[:space:]]*$' /tmp/review_verdict.txt | tail -1 | tr -d '[:space:]')"
+# Verdict: scan the LAST occurrence of a line containing a bare PASS/FAIL token.
+# Loosen so `PASS`, `PASS.`, `**PASS**`, "PASS (see notes)" all match — but anchor on
+# the final line(s) so a mid-text "FAIL" mention doesn't override a final PASS.
+# Only a token that is PASS or FAIL (case-insensitive) counts; nothing else.
+VERDICT="$(grep -iE '(^|[^A-Za-z])(PASS|FAIL)([^A-Za-z]|$)' /tmp/review_verdict.txt | tail -1 | grep -oEi 'PASS|FAIL' | tail -1 | tr '[:lower:]' '[:upper:]')"
 
 echo "---- critic verdict ----"
-grep -iE "^${VERDICT}$" /tmp/review_verdict.txt || true
+echo "(last verdict token: ${VERDICT:-<none>})"
 echo "------------------------"
 
 if [ "$VERDICT" = "FAIL" ]; then
