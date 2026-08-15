@@ -31,32 +31,50 @@ following this exact loop. If anything is ambiguous, stop and ask.
    work: build / test / design. Show me the plan BEFORE any code is written.
    Do not start implementing without my OK on the plan.
 
-2. **BUILD.** builder implements the feature + tests, following the UI rules in
-   `design-system/` (consistency gate).
+2. **BUILD INCREMENTALLY (commit after each green unit).** Break the work into
+   small logical units (a feature, a screen, a fix). For EACH unit:
+   a. Implement that unit + its tests (following `design-system/` UI rules).
+   b. Run that unit's tests (or `tests/gate.sh`) — must go green.
+   c. Make a SINGLE, meaningful commit: `git add` the unit's files and commit with
+      a short message ("feat: add task add/toggle UI", "fix: toggle 400 on no-body PATCH").
+   DO NOT accumulate one giant uncommitted blob. The git history should read as a
+   logical sequence of small commits, so the final diff in the steer step is
+   tiny/understood, not a 30-file wall.
 
-3. **HARD QUALITY GATE — `run-gates.sh` (non-skippable).** After BUILD, run
-   `./run-gates.sh`. It runs BOTH gates in sequence:
+3. **HARD QUALITY GATE — `run-gates.sh` (non-skippable).** After the incremental
+   build, run `./run-gates.sh`. It runs:
    - **GATE 1 — TESTS:** `tests/gate.sh` auto-detects the stack(s) and runs the
      matching test command(s) — including BOTH frontend and backend for a full-stack
      project (e.g. `client/` + `server/`). Must exit 0 (all suites green).
-   - **GATE 2 — ADVERSARIAL REVIEW:** `tests/review_gate.sh` has a DIFFERENT model
-     (the critic) review the diff. Must pass.
-   - **MANDATORY:** `run-gates.sh` MUST exit 0 before ANY steer/commit. If it fails,
-     the pipeline HALTS and the builder must fix, then re-run `run-gates.sh`.
+   - **GATE 2 — ADVERSARIAL REVIEW:** `tests/review_gate.sh` runs a DIFFERENT model
+     (the critic) on the diff. Must pass. Use `CRITIC_STANDARD=mvp` for an MVP build
+     so out-of-scope tradeoffs become notes, not FAIL — but real correctness/security
+     bugs still block.
+   - **MANDATORY:** `run-gates.sh` MUST exit 0 before ANY steer/commit of the final
+     state. If it fails, the builder fixes and re-runs (or only the specific failing
+     unit is revisited — keep uncommitted work minimal).
    - Never proceed past a red gate. Never edit a test to make it pass unless the
      test itself is wrong AND you can justify it. Do NOT skip Gate 2 — a self-review
      by the builder is NOT a substitute; it must be a different model.
    - **Do NOT review the code yourself.** The adversarial review must be done by the
-     SEPARATE critic process that `tests/review_gate.sh` launches (`omp --print
-     --model z-ai/glm-5.2`). Your own analysis of your own code is not the gate. Run
-     `./run-gates.sh` and let the independent critic do the review; do not improvise
-     a self-review.
+     SEPARATE critic process that `tests/review_gate.sh` launches. Run `./run-gates.sh`
+     and let the independent critic do the review; do not improvise a self-review.
    - Do not hand-edit a test command into `tests/gate.sh` — let it auto-detect. If a
      suite isn't detected, tell me rather than forcing one.
 
-4. **STEER CHECKPOINT.** Stop. Show me the complete diff + a 2-line summary of
-   what changed and why. I approve (then you commit) or redirect you. Do NOT
-   commit or merge before this approval.
+3b. **GATE 3 — VISUAL + FUNCTIONAL E2E (if the app has a UI).** When a UI exists,
+   also run `tests/visual_gate.sh`:
+   - Start the app, run Playwright e2e (`tests/e2e/`) that asserts core flows work
+     (add / toggle / delete / share / sync) AND captures screenshots.
+   - A vision model (`google/gemini-3.1-flash-lite`) reviews the screenshots for
+     visual correctness and consistency.
+   - Functional e2e must pass. If the vision reviewer finds blocking visual defects,
+     fix them. (UI-only concern; skip if the deliverable has no UI.)
+
+4. **STEER CHECKPOINT.** Stop. Because you committed incrementally, this diff is a
+   SHORT, readable summary of the recent commits — not a giant blob. Show me the git
+   log / recent diff + a 2-line summary. I approve (then you may push/finalize) or
+   redirect you. Do NOT force-push or rewrite history without asking.
 
 ## UI rules (loaded from design-system/)
 

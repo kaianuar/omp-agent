@@ -45,7 +45,12 @@ cp "$SRC/requirements.md" .
 mkdir -p tests
 cp "$SRC/tests/gate.sh" tests/
 cp "$SRC/tests/review_gate.sh" tests/
+cp "$SRC/tests/visual_gate.sh" tests/
 chmod +x tests/*.sh
+# Playwright e2e template + config (for GATE 3 visual/functional e2e)
+mkdir -p tests/e2e
+cp "$SRC/tests/e2e/_example.spec.ts" tests/e2e/
+cp "$SRC/tests/e2e/playwright.config.ts" tests/e2e/
 # The hard, non-skippable dual-gate runner (GATE 1 tests + GATE 2 adversarial review)
 cp "$SRC/run-gates.sh" .
 chmod +x run-gates.sh
