@@ -61,6 +61,17 @@ on the model + provider, so it's NOT baked into the pipeline — it's a user cho
 `{"thinking":{"type":"low"}}` and no quality loss, in a short code probe. Re-verify on
 your own models before relying on it.)
 
+## Known improvement (tracked — GATE-2 critic context)
+**Issue:** the adversarial critic in `tests/review_gate.sh` is passed ONLY the git diff. This is
+context-starved for larger codebases — the critic can't see module boundaries, imports, or
+cross-file ripple effects of a change; it only sees the patch hunks. It worked for a small
+2-service app but is under-powered for real repos.
+
+**Planned fix (not yet implemented):** have `review_gate.sh` also pass a *structural view* of the
+changed files — a file tree + key signatures/exports of the touched files — alongside the diff, so
+the critic reasons against real context (with bounded scope, not the whole repo). Tracked in
+`mnemosyne` task `omp-agent-enhancement`. Do this before relying on Gate 2 for non-trivial projects.
+
 ## How to switch
 - Critic: CRITIC_MODEL env or tests/review_gate.sh default.
 - Builder: modelRoles in .omp/config.yml.
