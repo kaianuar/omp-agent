@@ -61,16 +61,20 @@ on the model + provider, so it's NOT baked into the pipeline — it's a user cho
 `{"thinking":{"type":"low"}}` and no quality loss, in a short code probe. Re-verify on
 your own models before relying on it.)
 
-## Known improvement (tracked — GATE-2 critic context)
-**Issue:** the adversarial critic in `tests/review_gate.sh` is passed ONLY the git diff. This is
-context-starved for larger codebases — the critic can't see module boundaries, imports, or
-cross-file ripple effects of a change; it only sees the patch hunks. It worked for a small
-2-service app but is under-powered for real repos.
+## Known improvement (tracked — GATE-2 critic context + criteria)
+**Issue (escalated 2026-08-15):** the adversarial critic in `tests/review_gate.sh` is passed ONLY the git diff
+and NO requirements / acceptance criteria. Two consequences:
+1. **Context-starved for larger codebases** — it can't see module boundaries, imports, or cross-file ripple
+   effects; only patch hunks. Worked for a small 2-service app, under-powered for real repos.
+2. **Gates on out-of-scope opinions** — without the requirements, the critic FAILs on design tradeoffs the spec
+   explicitly excluded (observed at round 7 of family-todo: "no password login / CORS / no-auth" are required-MVP
+   exclusions, yet the critic gate-blocked on them). A hard gate must not fail on out-of-scope items.
 
-**Planned fix (not yet implemented):** have `review_gate.sh` also pass a *structural view* of the
-changed files — a file tree + key signatures/exports of the touched files — alongside the diff, so
-the critic reasons against real context (with bounded scope, not the whole repo). Tracked in
-`mnemosyne` task `omp-agent-enhancement`. Do this before relying on Gate 2 for non-trivial projects.
+**Planned fix (not yet implemented):** `review_gate.sh` should pass to the critic, alongside the diff:
+   (a) the **requirements + acceptance criteria** (so it knows what's in/out of scope),
+   (b) a **severity rubric** (correctness/security = gate; design/UX-optional = note, don't block),
+   (c) a **structural view** of changed files (file tree + key signatures/exports) for real context.
+Tracked in `mnemosyne` task `omp-agent-enhancement`. Do this before relying on Gate 2 for non-trivial projects.
 
 ## How to switch
 - Critic: CRITIC_MODEL env or tests/review_gate.sh default.
