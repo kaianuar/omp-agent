@@ -94,5 +94,10 @@ following this exact loop. If anything is ambiguous, stop and ask.
 - Never trust the model's self-reported pass. GATE 1 runs real tests; only a
   green `gate.sh` counts as green.
 - One logical change per commit. Commit incrementally.
+- **Keep `.gitignore` current.** As you build, add any generated/runtime artifact to
+  `.gitignore` — databases (`*.db`, `*-wal`, `*-shm`), build output (`node_modules/`,
+  `dist/`), logs, secrets, QA screenshots if you don't want them committed. NEVER
+  commit live database files, lock files, or secrets. Check `git status` before a
+  commit: if runtime state is staged, `.gitignore` it first.
 - If you're unsure or blocked > threshold, stop and ask me rather than guessing.
 - Keep the diff minimal and readable.
