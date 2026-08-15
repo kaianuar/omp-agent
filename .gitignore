@@ -1,0 +1,16 @@
+# deps / build
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# omp / pipeline artifacts
+/tmp/
+test-results.json
+*.log
+
+# env / secrets
+.env
+.env.*
