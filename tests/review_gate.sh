@@ -28,17 +28,16 @@ OPENROUTER_URL="https://openrouter.ai/api/v1/chat/completions"
 
 echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s, max_tokens=${CRITIC_MAX_TOKENS})"
 
-# OpenRouter key
+# OpenRouter key — use ONLY the omp session env (OPENROUTER_API_KEY). Do NOT fall
+# back to ~/.hermes/.env: a cloned repo sets up OpenRouter in its own env, not in
+# Hermes's file. Run this from within omp (or export the var) so the key is present.
 OR_KEY="${OPENROUTER_API_KEY:-}"
 if [ -z "$OR_KEY" ]; then
-  if [ -f ~/.hermes/.env ]; then
-    OR_KEY="$(grep -E '^OPENROUTER_API_KEY=' ~/.hermes/.env | head -1 | cut -d= -f2- | tr -d '"' )"
-  fi
-fi
-if [ -z "$OR_KEY" ]; then
-  echo "xx OPENROUTER_API_KEY not set (env or ~/.hermes/.env)."
+  echo "xx OPENROUTER_API_KEY not set in the environment. Run this gate from within omp"
+  echo "   (which has the key in its env) or export OPENROUTER_API_KEY first."
   exit 1
 fi
+[ "${REVIEW_DEBUG:-0}" = "1" ] && echo ">> using OPENROUTER_API_KEY from the environment"
 
 if [ ! -s "$DIFF_FILE" ]; then
   echo "!! No diff (${DIFF_FILE} empty). Pass a path to the diff."

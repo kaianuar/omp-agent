@@ -15,6 +15,18 @@
 set -uo pipefail
 PROJ_ROOT="$(pwd)"
 
+# Load the project's .env (the ONLY one the pipeline reads). This exposes
+# DATABASE_URL / ABLY_KEY / OPENROUTER_API_KEY etc. so the gates run against real
+# infra instead of silently skipping (e.g. the 8 Neon tests skip without it).
+if [ -f "$PROJ_ROOT/.env" ]; then
+  set -a; # shellcheck disable=SC1091
+  . "$PROJ_ROOT/.env"
+  set +a
+  [ "${REVIEW_DEBUG:-0}" = "1" ] && echo ">> loaded project .env ($PROJ_ROOT/.env)"
+else
+  echo "!! no .env found at $PROJ_ROOT/.env (gates may skip infra-dependent tests)"
+fi
+
 echo ""
 echo "=============================================="
 echo "  HARD QUALITY GATE — run-gates.sh"
