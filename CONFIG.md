@@ -1,4 +1,10 @@
-# Finalized Model Configuration (all tests run-the-code validated, 2026-08-15)
+# Model Configuration — the repo author's validated setup (2026-08-15)
+
+> These are THIS repo's defaults, validated live against the author's providers.
+> **You do NOT need these exact models** — the pipeline is model-agnostic. Replace
+> with your own via `.omp/config.yml` (roles) and `tests/review_gate.sh` (critic).
+> See README → *Configure your own models & providers* for how. The RULES below
+> (builder≠critic, max_tokens, real-tests) apply regardless of which models you pick.
 
 ## Provider status
 
