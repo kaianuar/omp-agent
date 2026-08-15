@@ -5,8 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DIFF_FILE="${1:-/tmp/review.diff}"
-# Critic model on OpenRouter (validated working). Set high max_tokens — glm-5.2
-# is a reasoning model and truncates/returns empty below ~4000 output tokens.
+#
+# TOKEN / COST NOTES (verified 2026-08-15):
+#  - max_tokens is only a CEILING; the model self-terminates when done, so a higher
+#    value does NOT waste tokens on normal short answers. Set it generously (>=4000)
+#    so reasoning never starves the answer — do NOT lower max_tokens "to save money".
+#  - To actually cut cost, use LOW-THINKING for the critic, not a lower max_tokens.
+#    Tested: glm-5.2 with {"thinking":{"type":"low"}} dropped completion tokens
+#    ~85% (1976 -> ~296) and still produced correct code.
 CRITIC_MODEL="${CRITIC_MODEL:-z-ai/glm-5.2}"
 
 echo "==> GATE 2: adversarial review (critic model=${CRITIC_MODEL})"
