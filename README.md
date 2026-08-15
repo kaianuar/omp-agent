@@ -90,7 +90,7 @@ The goal here is a local agent that takes a goal and drives it to completion
 **reliably** — not a demo that mostly works and occasionally ships something broken.
 That goal shapes every choice:
 
-**Two things have to be hard:**
+**Three things have to be hard:**
 1. **The build has to actually work** — so there's a hard test gate in front of
    everything (Gate 1). Code isn't "done" because the agent says so; it's done when
    the tests pass.
@@ -98,6 +98,11 @@ That goal shapes every choice:
    review (Gate 2). The reviewer is deliberately a *different* model than the
    builder, because a builder that checks its own work misses its own assumptions
    (just like a human second-guessing their own typos).
+3. **The UI has to actually render and work** — so when there's a user interface
+   there's a visual + functional e2e gate (Gate 3). Playwright drives the real app
+   through its flows and captures screenshots, and a vision model checks the UI
+   looks correct. A diff-only review can silently bless a screen that's broken or
+   bare; this gate exercises it for real.
 
 **Why omp specifically fits this:**
 - **It covers the whole loop in one tool.** omp plans, dispatches subagents, and can
@@ -192,13 +197,17 @@ or the `CRITIC_MODEL` env var for the critic. See
 
 ---
 
-## The two model roles (what to configure)
+## The model roles (what to configure)
 
-The pipeline needs **two models**, and they **must differ**:
+The pipeline needs **two core models**, and they **must differ**:
 
 1. **builder** — implements code + tests. Pick your fastest strong coder.
 2. **critic** (Gate 2) — adversarially reviews the builder's diff. Pick a *different*
    model so the review is genuinely independent. Reasoning-heavy models are good here.
+
+There's also an optional **vision reviewer** for Gate 3: it checks screenshots of the
+running UI. A cheap multimodal model works (e.g. `google/gemini-3.1-flash-lite`);
+it's used by `tests/visual_gate.sh`, not by the builder/critic roles.
 
 > **Rule:** if builder and critic are the same model, Gate 2 degenerates into
 > self-review. Keep them distinct.
@@ -267,18 +276,22 @@ into the pipeline. See `CONFIG.md` for the full rule set.
 
 ## Key rules baked in (validated, don't break them)
 
-1. **Builder ≠ critic.** The adversarial review only works if those are *different
-   models*. Don't set them equal.
-2. **Use a generous `max_tokens` (>= 4000).** `max_tokens` is a CEILING — the model
-   self-terminates when done, so a higher value doesn't waste tokens on short
-   answers. It just gives reasoning enough room so the answer isn't truncated empty.
+1. **Builder ≠ critic ≠ vision reviewer.** The adversarial review (Gate 2) only works
+   if the critic is a *different* model than the builder. And GATE 3's visual review
+   runs as a separate vision-model process too (no self-reviewing the UI).
+2. **Use a generous `max_tokens` (>= 4000) for reasoning models.** `max_tokens` is a
+   CEILING — the model self-terminates when done, so a higher value doesn't waste
+   tokens on short answers. It just gives reasoning enough room so the answer isn't
+   truncated empty. (GATE 3's vision review also needs enough tokens.)
 3. **Optional: low-thinking to cut cost.** Some reasoning models accept a low
    `thinking`/`reasoning_effort` setting that sharply cuts completion tokens. Support
    and value vary by model/provider, so it's a user choice (see CONFIG.md) — verify
    it on your own model before relying on it.
 4. **GATE 1 runs real tests.** Never trust a model's self-reported pass — a green
    test suite is the only green.
-5. **Watch provider rate limits** (some providers 403 under load).
+5. **GATE 3 runs real flows + a real vision check.** Never trust "the code compiles"
+   as proof a screen works — Playwright exercises it and a vision model checks it.
+6. **Watch provider rate limits** (some providers 403 under load).
 
 ---
 
@@ -312,6 +325,10 @@ omp-agent/
 - **Oh My Pi** (`omp`) installed and configured.
 - At least one provider key (e.g. OpenRouter) for the critic, plus a builder model.
   See [Configure your own models & providers](#configure-your-own-models--providers).
+- **GATE 3 (visual/e2e) needs a browser + a cheap vision model.** `tests/visual_gate.sh`
+  installs `@playwright/test` + Chromium on first run and uses a vision model
+  (`VISION_MODEL`, default `google/gemini-3.1-flash-lite`) to review screenshots.
+  Only needed if the deliverable has a UI.
 
 ---
 
