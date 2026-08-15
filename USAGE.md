@@ -35,13 +35,28 @@ criteria). That's the only input the pipeline needs.
 
 ---
 
-## 2. Run omp (the whole loop)
+## 2. Run the PIPELINE automatically (recommended)
 
-The pipeline is driven by **`PIPELINE.md`** (the operating loop) + **`requirements.md`**
-(your goal). Give both to omp:
+The **`pipeline.sh`** orchestrator closes the loop for you: it runs the builder,
+runs BOTH gates (including the independent adversarial critic), and if the critic
+fails, it **automatically feeds the findings back to the builder to fix and re-runs**
+— so you never copy-paste the review output.
 
-**Interactive (recommended)** — omp plans, waits for your approval, builds, gates,
-and stops at the steer checkpoint for your sign-off:
+```bash
+export PATH="$HOME/.bun/bin:$PATH"
+BUILDER_MODEL="xiaomi-token-plan-sgp/mimo-v2.5-pro" ./pipeline.sh requirements.md
+```
+
+It loops until all gates pass (or `MAX_ROUNDS`, default 5, then stops for you).
+Options:
+- `MAX_ROUNDS=8 ./pipeline.sh ...`  — allow more fix rounds
+- `BUILDER_MODEL="..." ./pipeline.sh ...` — set your builder model
+
+## 2b. Run omp manually (step-by-step, if you prefer control)
+
+The same loop but with you driving each step. Interactive — omp plans, waits for
+your approval, builds, and stops at the steer checkpoint:
+
 ```bash
 omp --model <builder-model> \
     --append-system-prompt=PIPELINE.md \
@@ -69,12 +84,16 @@ or whatever you set in `.omp/config.yml` / your omp config.
 1. **PLAN** — omp reads the goal, proposes a plan, and **waits for your approval**
    (interactive). Approve or redirect in the session.
 2. **BUILD** — the builder agent implements the code (and tests).
-3. **GATE 1 — TESTS.** It runs `tests/gate.sh`, which **auto-detects the stack(s)**
-   and runs the matching test command(s) — root + `client/` + `server/` for
-   full-stack. All must pass (exit 0) or it halts and fixes.
-4. **GATE 2 — ADVERSARIAL REVIEW.** A **different** model (the critic) reviews the
-   diff. FAIL sends it back, bounded iterations.
-5. **STEER** — omp shows you the diff and **waits for approval before committing**.
+3. **HARD QUALITY GATE — `run-gates.sh`**:
+   - **GATE 1 — TESTS.** `tests/gate.sh` auto-detects the stack(s) and runs the
+     matching test command(s) — root + `client/` + `server/` for full-stack. Must pass.
+   - **GATE 2 — ADVERSARIAL REVIEW.** `tests/review_gate.sh` runs an **independent**
+     critic (a DIFFERENT model, e.g. GLM-5.2) that reviews the diff. Must pass.
+   - The builder MUST NOT self-review; the critic is a separate process.
+4. **FEEDBACK LOOP (automatic via `pipeline.sh`).** If Gate 2 fails, the critic's
+   findings are saved and **fed back to the builder** to fix, then gates run again —
+   repeat until green (or MAX_ROUNDS).
+5. **STEER** — the built work is shown and **waits for your approval before committing**.
 6. **DONE.**
 
 You steer at the approval points by replying (e.g. "approve", "change X", "continue").

@@ -40,12 +40,18 @@ cp "$SRC/README.md" .
 cp "$SRC/CONFIG.md" .
 cp "$SRC/.gitignore" .
 
-# --- Project-specific: requirements template + tests ---
+# --- Project-specific: requirements template + tests + hard-gate runner ---
 cp "$SRC/requirements.md" .
 mkdir -p tests
 cp "$SRC/tests/gate.sh" tests/
 cp "$SRC/tests/review_gate.sh" tests/
 chmod +x tests/*.sh
+# The hard, non-skippable dual-gate runner (GATE 1 tests + GATE 2 adversarial review)
+cp "$SRC/run-gates.sh" .
+chmod +x run-gates.sh
+# The fully-automated orchestrator (build -> gates -> feed findings back -> loop)
+cp "$SRC/pipeline.sh" .
+chmod +x pipeline.sh
 
 # --- omp project config (wired to the user's REAL modelRoles) ---
 mkdir -p .omp
