@@ -13,6 +13,8 @@ independent.
 The pipeline is **model-agnostic** — you bring your own models/providers, or use the
 recommended defaults.
 
+🌍 **See it in action:** apps built with omp-agent → **[PROJECTS.md](PROJECTS.md)**.
+
 ---
 
 ## Quick start (you have models configured)
