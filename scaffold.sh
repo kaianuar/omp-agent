@@ -72,5 +72,4 @@ find . -type f | sort
 echo ""
 echo "Next steps:"
 echo "  1. Edit requirements.md with your goal"
-echo "  2. Edit tests/gate.sh (the RUN TESTS block) to your real test runner"
-echo "  3. Run: omp   (in $DEST) — PIPELINE.md drives the loop"
+echo "  2. Run: omp   (in $DEST) — PIPELINE.md drives the loop (tests auto-detect your stack)"

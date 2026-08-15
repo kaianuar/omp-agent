@@ -34,13 +34,17 @@ following this exact loop. If anything is ambiguous, stop and ask.
 2. **BUILD.** builder implements the feature + tests, following the UI rules in
    `design-system/` (consistency gate).
 
-3. **GATE 1 — TESTS (hard, non-negotiable).** Run the test suite via
-   `tests/gate.sh`. It MUST exit 0. If it fails:
+3. **GATE 1 — TESTS (hard, non-negotiable).** Run `tests/gate.sh`. It auto-detects
+   the stack(s) and runs the matching test command(s) — including BOTH frontend and
+   backend for a full-stack project (e.g. `client/` + `server/`). It MUST exit 0
+   (all suites green). If it fails:
    - builder fixes the failing test/impl
    - re-run gate.sh
    - if after 3 attempts it still fails, STOP and report to me.
    Never proceed past a red suite. Never edit a test to make it pass unless the
    test itself is wrong AND you can justify the change to me.
+   Note: do NOT hand-edit a test command into gate.sh — let it auto-detect. If a
+   suite genuinely isn't detected, tell me rather than forcing one.
 
 4. **GATE 2 — ADVERSARIAL REVIEW.** Hand the full diff to the **critic** (a
    different model). Critic returns PASS or concrete problems.

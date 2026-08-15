@@ -28,11 +28,12 @@ cd omp-agent
 # 3. Edit the goal, then let omp run the loop (see PIPELINE.md)
 cd ~/code/my-app
 #   - edit requirements.md  (what to build)
-#   - edit tests/gate.sh    (the RUN TESTS block -> your real test runner)
 omp
 ```
 
-New machine? See [Configure your own models & providers](#configure-your-own-models--providers).
+That's it — fill in `requirements.md`, and omp handles the rest (including
+auto-detecting your stack's test command(s)). New machine? See
+[Configure your own models & providers](#configure-your-own-models--providers).
 
 ---
 
@@ -275,7 +276,7 @@ omp-agent/
 ├── design-system/
 │   └── tokens.json      # UI design tokens (screen consistency)
 ├── tests/
-│   ├── gate.sh          # GATE 1 — hard test gate (edit RUN TESTS block)
+│   ├── gate.sh          # GATE 1 — hard test gate (auto-detects stack(s), runs tests)
 │   └── review_gate.sh   # GATE 2 — cross-model adversarial review
 └── .omp/
     └── config.yml       # modelRoles (EDIT to your models)
