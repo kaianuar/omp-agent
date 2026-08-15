@@ -127,3 +127,9 @@ omp-agent/
   ```bash
   git add -A && git commit -m "..." && git push
   ```
+
+---
+
+## License
+
+[MIT](LICENSE) © kaianuar
