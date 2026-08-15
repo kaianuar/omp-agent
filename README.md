@@ -35,6 +35,9 @@ That's it — fill in `requirements.md`, and omp handles the rest (including
 auto-detecting your stack's test command(s)). New machine? See
 [Configure your own models & providers](#configure-your-own-models--providers).
 
+Or view the full **[USAGE.md](USAGE.md)** cheat-sheet — how to run the pipeline
+yourself end to end (scaffold, omp commands, steering, troubleshooting).
+
 ---
 
 ## The loop (what omp does)
