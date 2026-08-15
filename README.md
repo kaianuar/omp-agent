@@ -66,37 +66,44 @@ The full operating instructions (roles, order, hard rules) live in **`PIPELINE.m
 
 ---
 
-## Why omp? (instead of Claude Code / other orchestrators)
+## Why omp? (the thinking behind this setup)
 
-This pipeline is built around **Oh My Pi (`omp`)** rather than a different coding
-agent or a separate orchestrator like Omnigent or Munder Difflin. The reasons:
+The goal here is a local agent that takes a goal and drives it to completion
+**reliably** — not a demo that mostly works and occasionally ships something broken.
+That goal shapes every choice:
 
-**omp is the whole stack in one tool:**
-- **Subagents + plan mode** — it plans, then dispatches subagents, so it can be the
-  planner, the builder, and the reviewer without glue code.
-- **Multi-provider** — 60+ providers through one interface, so you're not locked to
-  one vendor and can mix a builder from one provider with a critic from another.
-- **Per-role models** (`modelRoles`: default/plan/smol/...) — exactly what the
-  pipeline needs to keep the builder and critic on **different models**.
-- **`--mode rpc`** — a programmatic interface (JSON/stdio) for the non-interactive
+**Two things have to be hard:**
+1. **The build has to actually work** — so there's a hard test gate in front of
+   everything (Gate 1). Code isn't "done" because the agent says so; it's done when
+   the tests pass.
+2. **Someone independent has to review it** — so there's a cross-model adversarial
+   review (Gate 2). The reviewer is deliberately a *different* model than the
+   builder, because a builder that checks its own work misses its own assumptions
+   (just like a human second-guessing their own typos).
+
+**Why omp specifically fits this:**
+- **It covers the whole loop in one tool.** omp plans, dispatches subagents, and can
+  act as builder *and* reviewer. We didn't want to wire a separate orchestrator
+  between two agents — omp already coordinates subagents on its own.
+- **Per-role models built in.** omp routes different models to different roles
+  (`modelRoles`), which is exactly what we need to keep the builder and critic on
+  *different* models. No glue code.
+- **Not locked to one provider.** omp talks to many providers, so you mix a builder
+  from one vendor and a critic from another, and switch models as prices/quality
+  change (which they do, often).
+- **Programmable.** `--mode rpc` gives a JSON/stdio interface for the non-interactive
   automation path.
-- **Hashline edits, LSP/DAP, git-worktree isolation** — solid, real code editing,
-  not just model wrappers.
+- **Batteries that matter here.** Real editing primitives (hashline edits, LSP/DAP,
+  git-worktree isolation) and a solid agentic loop.
 
-**What we deliberately did NOT need:**
-- **Omnigent / a separate orchestrator** — omp already coordinates subagents and
-  per-role models, so adding Omnigent means wiring a protocol between two tools for
-  no gain. Omp alone covers the loop.
-- **Munder Difflin** — its strength is long-running 24/7 agent *fleets* with
-  clone-to-clone messaging. This pipeline needs *controlled, sequential, gated*
-  single-task execution with a human steer gate — not an always-on fleet.
-- **Claude Code** — it's a fine coding agent, but omp gives the same agentic loop
-  plus broader provider choice and native per-role model routing, matching how this
-  repo mixes providers.
-
-The design principle: **one tool, real test gates, and a genuinely independent
-reviewer.** omp provides the "one tool" while the two gates (tests + cross-model
-adversarial review) provide the quality.
+**What this setup is deliberately NOT:**
+- **Not an always-on "agent farm"** running 24/7 in the background. This pipeline is
+  *controlled, sequential, gated* single-task execution with a human steer gate at
+  the end. You give it one goal, it works until the gates pass, then it stops for
+  your approval. Running a fleet of agents around the clock is a different problem
+  with different (heavier) machinery — not what this strives for.
+- **Not tied to any specific model or vendor.** Swap builder/critic freely; the
+  gates and the loop are what guarantee quality.
 
 ---
 
