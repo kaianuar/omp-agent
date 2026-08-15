@@ -66,6 +66,107 @@ The full operating instructions (roles, order, hard rules) live in **`PIPELINE.m
 
 ---
 
+## Why omp? (instead of Claude Code / other orchestrators)
+
+This pipeline is built around **Oh My Pi (`omp`)** rather than a different coding
+agent or a separate orchestrator like Omnigent or Munder Difflin. The reasons:
+
+**omp is the whole stack in one tool:**
+- **Subagents + plan mode** — it plans, then dispatches subagents, so it can be the
+  planner, the builder, and the reviewer without glue code.
+- **Multi-provider** — 60+ providers through one interface, so you're not locked to
+  one vendor and can mix a builder from one provider with a critic from another.
+- **Per-role models** (`modelRoles`: default/plan/smol/...) — exactly what the
+  pipeline needs to keep the builder and critic on **different models**.
+- **`--mode rpc`** — a programmatic interface (JSON/stdio) for the non-interactive
+  automation path.
+- **Hashline edits, LSP/DAP, git-worktree isolation** — solid, real code editing,
+  not just model wrappers.
+
+**What we deliberately did NOT need:**
+- **Omnigent / a separate orchestrator** — omp already coordinates subagents and
+  per-role models, so adding Omnigent means wiring a protocol between two tools for
+  no gain. Omp alone covers the loop.
+- **Munder Difflin** — its strength is long-running 24/7 agent *fleets* with
+  clone-to-clone messaging. This pipeline needs *controlled, sequential, gated*
+  single-task execution with a human steer gate — not an always-on fleet.
+- **Claude Code** — it's a fine coding agent, but omp gives the same agentic loop
+  plus broader provider choice and native per-role model routing, matching how this
+  repo mixes providers.
+
+The design principle: **one tool, real test gates, and a genuinely independent
+reviewer.** omp provides the "one tool" while the two gates (tests + cross-model
+adversarial review) provide the quality.
+
+---
+
+## Installing & setting up omp
+
+### 1. Install
+
+Oh My Pi ships as a CLI. From its GitHub (`can1357/oh-my-pi`, also `omp.sh`):
+
+```bash
+# npm
+npm install -g @oh-my-pi/cli
+
+# or curl (Linux/macOS)
+curl -fsSL https://omp.sh/install.sh | bash
+```
+
+Confirm it works: `omp --version`.
+
+> Check the omp repo / omp.sh for the current, supported install command for your
+> platform — it ships by shell script, npm, Bun, or PowerShell.
+
+### 2. Point omp at your providers (API keys)
+
+omp reads provider keys from your shell environment and its own secrets store.
+At minimum set the keys for the providers you'll use:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."      # critic (any model via OpenRouter)
+export XIAOMI_API_KEY="..."                # optional: builder via Xiaomi MiMo
+export XIAOMI_BASE_URL="https://api.xiaomimimo.com/v1"
+# ... any others you use (DEEPSEEK_API_KEY, OPENCODE_GO_API_KEY, ...)
+```
+
+If you use Hermes and keep keys in `~/.hermes/.env`, that file is loaded into the
+environment automatically.
+
+### 3. Set your model roles
+
+omp's model routing lives in `~/.omp/agent/config.yml` (and `~/.config/oh-my-pi/models.yml`).
+Example:
+
+```yaml
+modelRoles:
+  default: z-ai/glm-5.2            # your builder model
+  plan: z-ai/glm-5.2
+  smol: deepseek/deepseek-v4-flash
+```
+
+You don't have to match this exactly — set the roles to models you have access to.
+
+### 4. Sanity-check with a coding probe
+
+Before trusting a model, run a tiny coding task and confirm it produces runnable
+code (never trust a model's self-report). Example probe (2026-08-15):
+
+> *"Write a Python function `dedupe_events(events)` that keeps the earliest
+> timestamp per id, output ordered by first appearance in the input, and returns
+> `[]` for empty input. Return only runnable code."*
+
+If it returns correct code, the model is usable in the pipeline (see CONFIG.md rules).
+
+### 5. Point the pipeline at your models
+
+Edit `.omp/config.yml` (per project) for builder/plan, and `tests/review_gate.sh`
+or the `CRITIC_MODEL` env var for the critic. See
+[Configure your own models & providers](#configure-your-own-models--providers).
+
+---
+
 ## The two model roles (what to configure)
 
 The pipeline needs **two models**, and they **must differ**:
