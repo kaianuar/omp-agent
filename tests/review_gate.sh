@@ -1,44 +1,51 @@
 #!/usr/bin/env bash
-# GATE 2 — adversarial review using a DIFFERENT model than the builder (validated 2026-08-15).
-# Builder = Xiaomi mimo-v2.5-pro; Critic = OpenRouter z-ai/glm-5.2 (cheap, top validated model).
-set -euo pipefail
-cd "$(dirname "$0")/.."
+# GATE 2 — adversarial review using a DIFFERENT model than the builder.
+# Builder != critic: critic defaults to OpenRouter z-ai/glm-5.2.
+#
+# Run from the PROJECT ROOT (or give a diff path as $1). Do NOT inline the diff as
+# an argv — a large diff exceeds OS arg limits. Instead we write the review prompt
+# (with the diff) to a temp file and let omp read it via `@file` (streams from disk).
+set -uo pipefail
+PROJ_ROOT="$(pwd)"
 
 DIFF_FILE="${1:-/tmp/review.diff}"
+
 # TOKEN / COST NOTES
 #  - max_tokens is only a CEILING; the model self-terminates when done, so a higher
 #    value does NOT waste tokens on normal short answers. Set it generously (>=4000)
 #    so reasoning never starves the answer.
-#  - Optional only: some reasoning-capable models accept a low-THINKING setting
-#    ({"thinking":{"type":"low"}}, or provider-equivalent) that cuts completion
-#    tokens substantially. Support and value vary by model/provider, so it's a
-#    user choice — not a pipeline default. (Author verified ~85% token cut on that
-#    model with no quality loss, but don't assume it applies to your models.)
+#  - Optional: some reasoning models accept low-thinking to cut tokens; varies by
+#    model/provider, user choice (see CONFIG.md).
 CRITIC_MODEL="${CRITIC_MODEL:-z-ai/glm-5.2}"
 
 echo "==> GATE 2: adversarial review (critic model=${CRITIC_MODEL})"
 
-# Build the diff to review
 if [ ! -s "$DIFF_FILE" ]; then
-  git add -N . 2>/dev/null || true
-  git diff > "$DIFF_FILE"
-  if [ ! -s "$DIFF_FILE" ]; then
-    echo "!! No changes to review."
-    exit 1
-  fi
+  echo "!! No diff provided (${DIFF_FILE} empty or missing). Provide it or pass a path."
+  exit 1
 fi
 echo "Diff: $(wc -l < "$DIFF_FILE") lines"
 
-# Invoke omp as the critic with the OpenRouter GLM model. On concrete problems it
-# exits 1 (gate fails, builder must fix). On PASS exits 0.
-omp --model "${CRITIC_MODEL}" \
-  "You are the adversarial code reviewer. Below is a diff produced by a builder agent.
-Review it harshly for correctness, logic, security, edge cases, and whether tests cover it.
-List concrete problems if any, then respond with exactly FAIL; if genuinely correct, PASS.
+# Build the prompt file (diff streamed from disk, not argv).
+PROMPT_FILE="${DIFF_FILE}.prompt.txt"
+{
+  echo "You are the adversarial code reviewer. A builder agent produced the diff below."
+  echo "Review it harshly for correctness, logic, security, edge cases, and test coverage."
+  echo "List concrete problems if any, then end with exactly: FAIL"
+  echo "If it is genuinely correct with no substantive issues, end with exactly: PASS"
+  echo ""
+  echo "DIFF:"
+  cat "$DIFF_FILE"
+} > "$PROMPT_FILE"
 
-DIFF:
-$(cat "$DIFF_FILE")" \
-  | tee /tmp/review_verdict.txt
+echo "Prompt: $(wc -c < "$PROMPT_FILE") bytes -> $PROMPT_FILE"
+
+# Run the critic non-interactively (--print is REQUIRED: without it omp expects a
+# TTY and exits/hangs when run from a script). Stream the prompt file.
+if ! omp --print --model "${CRITIC_MODEL}" "@${PROMPT_FILE}" 2>&1 | tee /tmp/review_verdict.txt; then
+  echo "xx GATE 2 — critic invocation failed."
+  exit 1
+fi
 
 if grep -qi '^FAIL' /tmp/review_verdict.txt; then
   echo "==> GATE 2: FAIL — sending findings back to builder for iteration."
