@@ -76,6 +76,12 @@ following this exact loop. If anything is ambiguous, stop and ask.
    log / recent diff + a 2-line summary. I approve (then you may push/finalize) or
    redirect you. Do NOT force-push or rewrite history without asking.
 
+   **Before this checkpoint, replace `README.md`** so it describes THE APP you built
+   (what it does, who it's for, how to run it, its stack) — NOT the omp-agent pipeline.
+   The scaffold ships a placeholder README; your job is to write the real one for the
+   finished app. The pipeline docs (PIPELINE.md / USAGE.md / CONFIG.md) stay as-is and
+   are not the app's README.
+
 ## UI rules (loaded from design-system/)
 
 - Every screen/component MUST consume tokens from `design-system/tokens.json`.

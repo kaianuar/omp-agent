@@ -36,9 +36,11 @@ echo "==> Scaffolding into $DEST"
 
 # --- Copy reusable pipeline files ---
 cp "$SRC/PIPELINE.md" .
-cp "$SRC/README.md" .
 cp "$SRC/CONFIG.md" .
 cp "$SRC/.gitignore" .
+# Project README: a TEMPLATE describing the app, NOT the pipeline README.
+# The builder replaces/rewrites this to describe the ACTUAL app during development.
+cp "$SRC/PROJECT_README.template.md" README.md
 
 # --- Project-specific: requirements template + tests + hard-gate runner ---
 cp "$SRC/requirements.md" .
