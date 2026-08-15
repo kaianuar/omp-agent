@@ -1,9 +1,10 @@
 # omp-agent
 
 A fully-automated, omp-native engineering pipeline: give it a goal and it drives to
-completion through a hard **test gate**, a **cross-model adversarial review**, and a
-human **steer checkpoint**. Plus a **factory** (`scaffold.sh`) to replicate the setup
-into any new project.
+completion through a hard **test gate**, a **cross-model adversarial review**, a
+**visual + functional e2e gate** (Playwright + a vision model sees the UI it builds),
+and a human **steer checkpoint**. Plus a **factory** (`scaffold.sh`) to replicate the
+setup into any new project.
 
 Everything runs through **Oh My Pi** (`omp`) — no Omnigent, no Munder Difflin, no
 separate orchestrator to glue together. Build quality is enforced by real tests;
@@ -51,24 +52,35 @@ yourself end to end (scaffold, omp commands, steering, troubleshooting).
   1. PLAN     — plan mode, breaks the goal into build/test/design work (you approve)
       │
       ▼
-  2. BUILD    — builder agent implements code + tests
+  2. BUILD    — builder agent implements code + tests, committing each logical unit
+                (small, meaningful commits, not one giant blob)
       │
       ▼
-  3. GATE 1   — HARD test gate (tests/gate.sh must exit 0; red suite = halt + fix)
+  3. GATE 1   — HARD test gate (tests/gate.sh auto-detects the stack; red = halt + fix)
       │
       ▼
   4. GATE 2   — ADVERSARIAL review: a DIFFERENT model criticizes the diff;
                 FAIL sends feedback back to iterate (bounded)
       │
       ▼
-  5. STEER    — omp stops and shows the diff for your approval before committing
+  5. GATE 3   — VISUAL + FUNCTIONAL E2E (if there's a UI): Playwright drives the
+                app through its real flows + captures screenshots, and a vision
+                model (google/gemini-3.1-flash-lite) reviews the UI actually renders
+                and looks correct (tests/visual_gate.sh)
       │
       ▼
-  6. DONE
+  6. STEER    — omp stops and shows the diff for your approval before committing
+      │
+      ▼
+  7. DONE
 ```
 
 The full operating instructions (roles, order, hard rules) live in **`PIPELINE.md`**
 — that's the file omp loads as context on every run.
+
+All three gates are hard and non-skippable (`run-gates.sh` runs GATE 1 + 2; GATE 3
+runs when the deliverable has a UI). omp must not self-review GATE 2 — the critic and
+the visual review are separate processes.
 
 ---
 
@@ -275,14 +287,20 @@ into the pipeline. See `CONFIG.md` for the full rule set.
 ```
 omp-agent/
 ├── scaffold.sh          # FACTORY — replicate this setup into a new project
+├── run-gates.sh         # HARD dual-gate runner (GATE 1 + GATE 2, sources project .env)
+├── pipeline.sh          # fully-automated loop (build → gates → feed findings back)
 ├── PIPELINE.md          # the operating loop omp follows
 ├── CONFIG.md            # the repo-author's validated model choices + rules
+├── USAGE.md            # how to drive the whole thing yourself
+├── PROJECTS.md          # apps built with omp-agent (live showcase)
 ├── requirements.md      # goal template (edit per project)
 ├── design-system/
 │   └── tokens.json      # UI design tokens (screen consistency)
 ├── tests/
 │   ├── gate.sh          # GATE 1 — hard test gate (auto-detects stack(s), runs tests)
-│   └── review_gate.sh   # GATE 2 — cross-model adversarial review
+│   ├── review_gate.sh   # GATE 2 — cross-model adversarial review (OpenRouter direct)
+│   ├── visual_gate.sh   # GATE 3 — Playwright functional e2e + vision screenshot review
+│   └── e2e/             # Playwright spec templates + config for GATE 3
 └── .omp/
     └── config.yml       # modelRoles (EDIT to your models)
 ```
