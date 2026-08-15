@@ -46,16 +46,20 @@ qwen/qwen3-coder-30b-a3b-instruct:free, deepseek/deepseek-v4-flash:free,
 z-ai/glm-4.7-flash:free, openai/gpt-oss-120b:free
 
 ## Critical implementation rules (VALIDATED)
-1. **Reasoning models return EMPTY if max_tokens too low** — but max_tokens is a CEILING
+1. **Reasoning models return EMPTY if max_tokens too low** — max_tokens is a CEILING
    (model self-terminates, does NOT waste tokens on short answers). Set it generously
-   (>= 4000) so reasoning never starves the answer; do NOT lower it "to save money".
+   (>= 4000) so reasoning never starves the answer.
 2. **Builder MUST differ from critic** (cross-model adversarial review). Don't set equal.
 3. **kimi-k2.6 is NOT usable on OpenRouter** (empty output) despite being in the local pool.
 4. **OpenCode Go throttles** — avoid as hot-path critic.
-5. **Cut critic cost via LOW-THINKING, not lower max_tokens.** Verified: glm-5.2
-   with {"thinking":{"type":"low"}} cut completion tokens ~85% (1976 -> ~296) and
-   still produced correct code. (Tested variants: thinking.low = cheapest at ~296;
-   reasoning_effort.low = ~1257; reasoning.effort.low = ~1055.)
+
+## Optional cost lever (user decision, not a default)
+Some reasoning-capable models accept a low-`thinking`/`reasoning_effort` setting that
+sharply cuts completion tokens. Whether it's supported and how much it helps depends
+on the model + provider, so it's NOT baked into the pipeline — it's a user choice.
+(Author's note: verified ~85% completion-token cut on z-ai/glm-5.2 with
+`{"thinking":{"type":"low"}}` and no quality loss, in a short code probe. Re-verify on
+your own models before relying on it.)
 
 ## How to switch
 - Critic: CRITIC_MODEL env or tests/review_gate.sh default.

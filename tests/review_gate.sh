@@ -5,14 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DIFF_FILE="${1:-/tmp/review.diff}"
-#
-# TOKEN / COST NOTES (verified 2026-08-15):
+# TOKEN / COST NOTES
 #  - max_tokens is only a CEILING; the model self-terminates when done, so a higher
 #    value does NOT waste tokens on normal short answers. Set it generously (>=4000)
-#    so reasoning never starves the answer — do NOT lower max_tokens "to save money".
-#  - To actually cut cost, use LOW-THINKING for the critic, not a lower max_tokens.
-#    Tested: glm-5.2 with {"thinking":{"type":"low"}} dropped completion tokens
-#    ~85% (1976 -> ~296) and still produced correct code.
+#    so reasoning never starves the answer.
+#  - Optional only: some reasoning-capable models accept a low-THINKING setting
+#    ({"thinking":{"type":"low"}}, or provider-equivalent) that cuts completion
+#    tokens substantially. Support and value vary by model/provider, so it's a
+#    user choice — not a pipeline default. (Author verified ~85% token cut on that
+#    model with no quality loss, but don't assume it applies to your models.)
 CRITIC_MODEL="${CRITIC_MODEL:-z-ai/glm-5.2}"
 
 echo "==> GATE 2: adversarial review (critic model=${CRITIC_MODEL})"

@@ -251,13 +251,13 @@ into the pipeline. See `CONFIG.md` for the full rule set.
 
 1. **Builder ≠ critic.** The adversarial review only works if those are *different
    models*. Don't set them equal.
-2. **Use a generous `max_tokens` (>= 4000), but never lower it "to save money."**
-   `max_tokens` is a CEILING — the model self-terminates when done, so a higher value
-   doesn't waste tokens on short answers. It just gives reasoning enough room so the
-   answer doesn't get truncated to empty.
-3. **Cut cost with low-thinking, not a smaller cap.** For reasoning models, a low
-   `thinking` setting slashes completion tokens (verified ~85% on glm-5.2) without
-   hurting output quality.
+2. **Use a generous `max_tokens` (>= 4000).** `max_tokens` is a CEILING — the model
+   self-terminates when done, so a higher value doesn't waste tokens on short
+   answers. It just gives reasoning enough room so the answer isn't truncated empty.
+3. **Optional: low-thinking to cut cost.** Some reasoning models accept a low
+   `thinking`/`reasoning_effort` setting that sharply cuts completion tokens. Support
+   and value vary by model/provider, so it's a user choice (see CONFIG.md) — verify
+   it on your own model before relying on it.
 4. **GATE 1 runs real tests.** Never trust a model's self-reported pass — a green
    test suite is the only green.
 5. **Watch provider rate limits** (some providers 403 under load).
