@@ -65,19 +65,26 @@ run_omp() { # prompt...  (extra positional args are the task text)
   return "$rc"
 }
 
-# Clean the plan to only plan.md-concerned content before a build phase call.
+# Extract the ordered list of implementation phases from plan.md.
+# Matches ONLY top-level phase headings like "## Phase 1: Domain Core"
+# (not table mentions, risk rows, or dependency references), dedupes, and sorts
+# numerically so phases build in order 1..N.
 extract_phases() {
-  # Heuristic: pull phase/commit names from the plan's build-order section.
-  # Falls back to a single "impl" phase (build everything) if none found.
-  if ! grep -qE "BUILD ORDER|PHASES|PHASE 1|Phase 1|Commit " plan.md 2>/dev/null; then
+  local phases
+  phases=$(grep -iE '^#+[[:space:]]+phase[[:space:]]+[0-9]+' plan.md 2>/dev/null \
+    | sed -E 's/^#+[[:space:]]*//I; s/[[:space:]]*:.*$//I; s/[[:space:]]+$//' \
+    | tr '[:upper:]' '[:lower:]' \
+    | sort -t' ' -k2 -n \
+    | sort -u -k1,1 -k2,2n)
+  if [ -z "$phases" ]; then
     echo "impl"
     return
   fi
-  # Try to extract build-order phase/commit rows.
-  grep -ioE "(PHASE [0-9]+|feat\([a-z-]+\):[^|,]+)" plan.md 2>/dev/null \
-    | head -40 \
-    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-    || echo "impl"
+  # Rebuild as "Phase N" tokens in numeric order.
+  echo "$phases" | while read -r line; do
+    n=$(echo "$line" | sed -E 's/^phase[[:space:]]+//')
+    [ -n "$n" ] && echo "Phase $n"
+  done
 }
 
 # ---------------- argument dispatch ----------------
