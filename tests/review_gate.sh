@@ -68,7 +68,15 @@ fi
 node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" "$REVIEW_HISTORY_FILE" <<'NODE' > /tmp/review_request.json
 const fs=require('fs');
 const [ , , diffFile, model, standard, reqFile, maxTokens, histFile ]=process.argv;
-const diff=fs.readFileSync(diffFile,'utf8');
+// Cap the diff so the OpenRouter request stays under its size limit (large diffs
+// across phases caused 400 "JSON parsing failed"). Head+tail keeps the start and end.
+let diff=fs.readFileSync(diffFile,'utf8');
+const MAX_DIFF=30000;
+if (Buffer.byteLength(diff,'utf8')>MAX_DIFF){
+  const head=diff.slice(0,Math.floor(MAX_DIFF/2));
+  const tail=diff.slice(-Math.floor(MAX_DIFF/2));
+  diff=`${head}\n...[truncated ${Buffer.byteLength(diff,'utf8')-MAX_DIFF} bytes]...\n${tail}`;
+}
 let req='';
 try { req=fs.readFileSync(reqFile,'utf8').slice(0,8000); } catch(e){}
 // Load this critic's OWN prior verdicts (its review history) so it can see what
