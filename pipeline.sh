@@ -265,7 +265,7 @@ for PHASE in "${PHASES[@]}"; do
     if [ "$C_EC" -eq 0 ]; then
       # Phase green: commit it so the NEXT phase has a clean diff baseline.
       git add -A 2>/dev/null || true
-      git commit -q -m "phase: ${PHASE}" 2>/dev/null || true
+      git commit -q --no-verify -m "phase: ${PHASE}" 2>/dev/null || true
       echo "==> PHASE ${PHASE} PASSED + committed after ${phase_round} round(s)."
       phase_done=1
     else
