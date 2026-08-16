@@ -100,18 +100,36 @@ VETO DISCIPLINE — these rules govern your ENTIRE review:
 - REQUIREMENTS ARE THE HIGHEST AUTHORITY. If the code follows a design the PROJECT
   REQUIREMENTS explicitly mandate (e.g. an extension-based file-type classifier,
   a specific mandated dependency or architecture), you MUST NOT FAIL it for that
-  choice. A requirement-approved decision is at most a NOTE, never a BLOCKER.
+  choice. A requirement-approved decision is at most a P3, never a P0/P1.
   Do not argue the code should use a different approach than the requirements specify.
-- SEVERITY HONESTY. BLOCKER = a genuine correctness, security, or logic defect in
-  THIS diff that breaks the build or the requirements' acceptance criteria. A
-  preference, a refactor suggestion, or a future-hardening idea is a NOTE, never
-  a BLOCKER. If the only remaining objections are NOTES or refactors, verdict is PASS.
 - SCOPE. Review THIS diff (this phase's code). Do not fail it for later-phase or
   whole-project concerns outside what this diff adds or changes.
 
+SEVERITY CLASSIFICATION — tag EVERY finding with exactly one of these (P0..P4):
+- P0 = CRITICAL BLOCKER: security vulnerability, data loss/corruption, crash, or a
+  clear violation of a REQUIREMENT acceptance criterion. Phase MUST NOT proceed.
+- P1 = MAJOR BLOCKER: a real correctness or logic defect that breaks the build or
+  a REQUIREMENT acceptance criterion. Phase MUST NOT proceed until fixed.
+- P2 = should fix: a real correctness/robustness issue that does not currently
+  break a requirement or the build, but could become P0/P1 if left. Tracked; the
+  phase MAY proceed with it outstanding, but it must be resolved before final ship.
+- P3 = good to fix: a refactor, clarity, or minor robustness improvement. Impacts
+  quality but not correctness. Tracked; phase MAY proceed.
+- P4 = nice-to-have / minor UX / stylistic preference / future-hardening idea.
+  Never blocks. Tracked; phase MAY proceed.
+
+A finding is P0/P1 ONLY if it is a genuine, concrete defect that breaks the build or
+an acceptance criterion in THIS diff. A preference, refactor suggestion, or future
+idea is P3 or P4 — never P0/P1. If a design choice is not contradicted by the
+requirements, treat it as P3 at most.
+
+Tag format: start each finding line with `[P0]`, `[P1]`, `[P2]`, `[P3]`, or `[P4]`.
+
 Review the diff harshly for correctness, logic, security, edge cases, and test coverage.
-List concrete BLOCKING problems first (each with severity), then any NON-BLOCKING notes.
-End your reply with a SINGLE final line that is exactly PASS or FAIL.
+List findings sorted by severity (P0 first, then P1, P2, P3, P4).
+Then list NON-BLOCKING NOTES (these are P3/P4 by definition).
+End with a SINGLE final line that is PASS if there are NO P0 or P1 findings, else FAIL.
+Verbatim: if any P0/P1 finding exists, the last line is exactly "FAIL". Otherwise it is exactly "PASS".
 
 DIFF:
 ${diff}`;
@@ -162,6 +180,17 @@ fi
 # the final line(s) so a mid-text "FAIL" mention doesn't override a final PASS.
 # Only a token that is PASS or FAIL (case-insensitive) counts; nothing else.
 VERDICT="$(grep -iE '(^|[^A-Za-z])(PASS|FAIL)([^A-Za-z]|$)' /tmp/review_verdict.txt | tail -1 | grep -oEi 'PASS|FAIL' | tail -1 | tr '[:lower:]' '[:upper:]')"
+
+# Extract NON-BLOCKING findings (P2/P3/P4) into a dedicated file the pipeline
+# collects and surfaces to the human at the end. P0/P1 gate the phase; P2+ do not.
+# The gate writes to ${REVIEW_NOTES_FILE} (default /tmp/review_notes.txt).
+REVIEW_NOTES_FILE="${REVIEW_NOTES_FILE:-/tmp/review_notes.txt}"
+{
+  echo ""
+  echo "===== PHASE REVIEW NOTES ($(date +%H:%M:%S)) ====="
+  # Lines tagged [P2]/[P3]/[P4] are the non-blocking findings to surface.
+  grep -E '^\s*\[P[234]\]' /tmp/review_verdict.txt 2>/dev/null
+} >> "${REVIEW_NOTES_FILE}" 2>/dev/null
 
 # Append this round's verdict to the review history so the NEXT round's critic
 # sees what it already asked for (no self-contradiction / no re-raising settled items).

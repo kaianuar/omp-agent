@@ -93,7 +93,7 @@ if(!key){ const p=os.homedir()+'/.hermes/.env'; if(fs.existsSync(p)){
   if(l) key=l.split('=')[1].trim().replace(/^"|"$/g,''); } }
 if(!key){ console.log('NO_KEY'); process.exit(2); }
 (async()=>{
-  const parts=[{type:'text',text:'These are screenshots of a web app. Judge the UI: is it rendering correctly, consistent, and usable? List concrete visual defects (broken/overlapping layout, inconsistent off-brand style, unusable controls, poor mobile layout). If there are no blocking visual defects, say PASS. End your reply with exactly PASS or FAIL.'}];
+  const parts=[{type:'text',text:'These are screenshots of a web app. Judge the UI visually. Tag each finding with a severity [P0..P4]: [P0]=broken/crash/unusable (must fix), [P1]=major visual defect that breaks a core flow or requirement (must fix), [P2]/[P3]=real but non-urgent visual/consistency issues (track, may proceed), [P4]=minor polish/nice-to-have. If there are NO [P0] or [P1] findings, say PASS. End your reply with exactly PASS or FAIL.'}];
   for (const f of pngs) parts.push({type:'image_url',image_url:{url:`data:image/png;base64,${fs.readFileSync(f).toString('base64')}`}});
   const body={model,messages:[{role:'user',content:parts}],max_tokens:700};
   const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(), Number(vtimeout||180)*1000);
@@ -104,6 +104,8 @@ if(!key){ console.log('NO_KEY'); process.exit(2); }
     const j=await r.json();
     const c=j?.choices?.[0]?.message?.content||'(no output)';
     console.log(c);
+    // Write the full review so P2+ notes can be surfaced to the human.
+    try { fs.writeFileSync('/tmp/gate3_vision_review.txt', c); } catch(e){}
     const verdict=(c.match(/\b(PASS|FAIL)\b/)||[])[1]||'FAIL';
     fs.writeFileSync('/tmp/gate3_vision_verdict.txt',verdict);
     process.exit(verdict==='PASS'?0:1);
@@ -111,6 +113,15 @@ if(!key){ console.log('NO_KEY'); process.exit(2); }
 })();
 NODE
   VISION_EC=$?
+  # Extract non-blocking visual findings (P2/P3/P4) into the shared notes file.
+  REVIEW_NOTES_FILE="${REVIEW_NOTES_FILE:-/tmp/review_notes.txt}"
+  if [ -f /tmp/gate3_vision_review.txt ]; then
+    {
+      echo ""
+      echo "===== VISUAL REVIEW NOTES ($(date +%H:%M:%S)) ====="
+      grep -E '^\s*\[P[234]\]' /tmp/gate3_vision_review.txt 2>/dev/null
+    } >> "${REVIEW_NOTES_FILE}" 2>/dev/null
+  fi
 else
   echo "==> no screenshots found in ${SHOTS_DIR}; skipping vision review"
 fi
