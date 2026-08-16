@@ -57,10 +57,10 @@ run_omp() { # prompt...  (extra positional args are the task text)
   if [ -n "$task" ]; then
     omp_call+=( "$task" )
   fi
-  timeout "${OMP_TIMEOUT:-300}" "${omp_call[@]}"
+  timeout "${OMP_TIMEOUT:-900}" "${omp_call[@]}"
   local rc=$?
   if [ "$rc" -eq 124 ]; then
-    echo "xx [pipeline] omp timed out (${OMP_TIMEOUT:-300}s). Marking as incomplete." >&2
+    echo "xx [pipeline] omp timed out (${OMP_TIMEOUT:-900}s). Marking as incomplete." >&2
   fi
   return "$rc"
 }
