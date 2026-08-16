@@ -6,10 +6,12 @@ completion through a hard **test gate**, a **cross-model adversarial review**, a
 and a human **steer checkpoint**. Plus a **factory** (`scaffold.sh`) to replicate the
 setup into any new project.
 
-Everything runs through **Oh My Pi** (`omp`) — no Omnigent, no Munder Difflin, no
-separate orchestrator to glue together. Build quality is enforced by real tests;
-the adversarial review uses a *different* model than the builder so it's genuinely
-independent.
+Everything runs through **Oh My Pi** (`omp`) as the agent, with a thin
+`pipeline.sh` orchestrator that drives a **plan-only phase** then a **phased build**
+(each phase: implement → test gate → adversarial review → commit → next), so a
+large project is reviewed in small, bounded slices instead of one giant wall.
+Build quality is enforced by real tests; the adversarial review uses a *different*
+model than the builder so it's genuinely independent.
 
 The pipeline is **model-agnostic** — you bring your own models/providers, or use the
 recommended defaults.
@@ -43,43 +45,47 @@ yourself end to end (scaffold, omp commands, steering, troubleshooting).
 
 ---
 
-## The loop (what omp does)
+## The loop (what the pipeline does)
 
 ```
 [requirements.md]
       │
       ▼
-  1. PLAN     — plan mode, breaks the goal into build/test/design work (you approve)
-      │
+  A. PLAN-ONLY  — builder writes plan.md (phases identified, NO code). Critic
+                  (Gate 0) approves the plan before any code exists. Rejections
+                  only revise the plan, never touch source.
+      │  plan approved
       ▼
-  2. BUILD    — builder agent implements code + tests, committing each logical unit
-                (small, meaningful commits, not one giant blob)
-      │
+  B. PHASED BUILD — for each phase (Phase 1: domain → Phase 2: adapters → ...):
+      │   ┌───────────────────────────────────────────┐
+      │   │  builder implements that phase's code+test │  (no plan edits)
+      │   ▼                                           │
+      │  GATE 1 — HARD test gate (tests/gate.sh; red = halt)   │
+      │   ▼                                           │
+      │  GATE 2 — ADVERSARIAL review: a DIFFERENT     │
+      │           model criticizes that phase's diff; │
+      │           FAIL → feed findings back → retry   │── loop (bounded)
+      │   ▼                                           │
+      │  PASS → commit that phase → next phase ───────┘
       ▼
-  3. GATE 1   — HARD test gate (tests/gate.sh auto-detects the stack; red = halt + fix)
-      │
-      ▼
-  4. GATE 2   — ADVERSARIAL review: a DIFFERENT model criticizes the diff;
-                FAIL sends feedback back to iterate (bounded)
-      │
-      ▼
-  5. GATE 3   — VISUAL + FUNCTIONAL E2E (if there's a UI): Playwright drives the
+  C. GATE 3  — VISUAL + FUNCTIONAL E2E (if there's a UI): Playwright drives the
                 app through its real flows + captures screenshots, and a vision
                 model (google/gemini-3.1-flash-lite) reviews the UI actually renders
                 and looks correct (tests/visual_gate.sh)
       │
       ▼
-  6. STEER    — omp stops and shows the diff for your approval before committing
+  D. STEER   — shows the diff for your approval before finalizing
       │
       ▼
-  7. DONE
+  E. DONE
 ```
 
 The full operating instructions (roles, order, hard rules) live in **`PIPELINE.md`**
 — that's the file omp loads as context on every run.
 
-All three gates are hard and non-skippable (`run-gates.sh` runs GATE 1 + 2; GATE 3
-runs when the deliverable has a UI). omp must not self-review GATE 2 — the critic and
+`pipeline.sh` orchestrates the whole thing (plan-only → per-phase build/gates).
+All gates are hard and non-skippable (`run-gates.sh` runs GATE 1 + 2; GATE 3 runs
+when the deliverable has a UI). omp must not self-review GATE 2 — the critic and
 the visual review are separate processes.
 
 ---
@@ -106,8 +112,10 @@ That goal shapes every choice:
 
 **Why omp specifically fits this:**
 - **It covers the whole loop in one tool.** omp plans, dispatches subagents, and can
-  act as builder *and* reviewer. We didn't want to wire a separate orchestrator
-  between two agents — omp already coordinates subagents on its own.
+  act as builder *and* reviewer. `pipeline.sh` is a thin orchestrator on top that
+  splits the work into a plan-only phase and per-phase build/review — omp provides
+  the agentic editing and model routing; the orchestrator just sequences the phases
+  and gates.
 - **Per-role models built in.** omp routes different models to different roles
   (`modelRoles`), which is exactly what we need to keep the builder and critic on
   *different* models. No glue code.
