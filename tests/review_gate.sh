@@ -24,6 +24,9 @@ CRITIC_TIMEOUT="${CRITIC_TIMEOUT:-300}"             # seconds; large diffs need 
 CRITIC_MAX_TOKENS="${CRITIC_MAX_TOKENS:-16000}"     # high: reasoning models burn tokens thinking and return empty if too low
 CRITIC_STANDARD="${CRITIC_STANDARD:-production}"    # production | mvp
 CRITIC_REQUIREMENTS="${CRITIC_REQUIREMENTS:-requirements.md}"  # acceptance/scope context
+# Review-history file: feed the critic its OWN prior verdicts so it does not
+# contradict earlier rulings or re-raise already-settled items. Appended each round.
+REVIEW_HISTORY_FILE="${REVIEW_HISTORY_FILE:-/tmp/review_history.txt}"
 OPENROUTER_URL="https://openrouter.ai/api/v1/chat/completions"
 
 echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s, max_tokens=${CRITIC_MAX_TOKENS})"
@@ -62,12 +65,16 @@ fi
 
 # Build the JSON request with the review prompt + requirements + diff (max_tokens
 # generous for reasoning models; not streamed).
-node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" <<'NODE' > /tmp/review_request.json
+node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" "$REVIEW_HISTORY_FILE" <<'NODE' > /tmp/review_request.json
 const fs=require('fs');
-const [ , , diffFile, model, standard, reqFile, maxTokens ]=process.argv;
+const [ , , diffFile, model, standard, reqFile, maxTokens, histFile ]=process.argv;
 const diff=fs.readFileSync(diffFile,'utf8');
 let req='';
 try { req=fs.readFileSync(reqFile,'utf8').slice(0,8000); } catch(e){}
+// Load this critic's OWN prior verdicts (its review history) so it can see what
+// it already asked for and avoid contradicting itself or re-raising settled items.
+let history='';
+try { history=fs.readFileSync(histFile,'utf8').slice(-6000); } catch(e){};
 // scope-aware severity instruction
 const scope = standard==='mvp'
   ? `GRADING (MVP standard): Use strict judgement. A real correctness or security defect MUST be FAIL.
@@ -81,6 +88,13 @@ ${scope}
 
 PROJECT REQUIREMENTS / SCOPE (in/out-of-scope context):
 ${req}
+
+YOUR PRIOR REVIEWS OF THIS CODE (history — read and honor it):
+${history||'(none yet)'}
+- If HISTORY is present: it records what you ALREADY told the builder to change in
+  earlier rounds. Treat resolved items as resolved; do NOT re-raise the same defect
+  as a blocker, and do not contradict a ruling you already gave. Only NEW,
+  not-yet-raised defects may become blockers.
 
 VETO DISCIPLINE — these rules govern your ENTIRE review:
 - REQUIREMENTS ARE THE HIGHEST AUTHORITY. If the code follows a design the PROJECT
@@ -148,6 +162,15 @@ fi
 # the final line(s) so a mid-text "FAIL" mention doesn't override a final PASS.
 # Only a token that is PASS or FAIL (case-insensitive) counts; nothing else.
 VERDICT="$(grep -iE '(^|[^A-Za-z])(PASS|FAIL)([^A-Za-z]|$)' /tmp/review_verdict.txt | tail -1 | grep -oEi 'PASS|FAIL' | tail -1 | tr '[:lower:]' '[:upper:]')"
+
+# Append this round's verdict to the review history so the NEXT round's critic
+# sees what it already asked for (no self-contradiction / no re-raising settled items).
+{
+  echo ""
+  echo "===== ROUND VERDICT ($(date +%H:%M:%S)) ====="
+  echo "VERDICT: ${VERDICT:-unknown}"
+  cat /tmp/review_verdict.txt
+} >> "${REVIEW_HISTORY_FILE}" 2>/dev/null
 
 echo "---- critic verdict ----"
 echo "(last verdict token: ${VERDICT:-<none>})"
