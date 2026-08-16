@@ -82,6 +82,19 @@ ${scope}
 PROJECT REQUIREMENTS / SCOPE (in/out-of-scope context):
 ${req}
 
+VETO DISCIPLINE — these rules govern your ENTIRE review:
+- REQUIREMENTS ARE THE HIGHEST AUTHORITY. If the code follows a design the PROJECT
+  REQUIREMENTS explicitly mandate (e.g. an extension-based file-type classifier,
+  a specific mandated dependency or architecture), you MUST NOT FAIL it for that
+  choice. A requirement-approved decision is at most a NOTE, never a BLOCKER.
+  Do not argue the code should use a different approach than the requirements specify.
+- SEVERITY HONESTY. BLOCKER = a genuine correctness, security, or logic defect in
+  THIS diff that breaks the build or the requirements' acceptance criteria. A
+  preference, a refactor suggestion, or a future-hardening idea is a NOTE, never
+  a BLOCKER. If the only remaining objections are NOTES or refactors, verdict is PASS.
+- SCOPE. Review THIS diff (this phase's code). Do not fail it for later-phase or
+  whole-project concerns outside what this diff adds or changes.
+
 Review the diff harshly for correctness, logic, security, edge cases, and test coverage.
 List concrete BLOCKING problems first (each with severity), then any NON-BLOCKING notes.
 End your reply with a SINGLE final line that is exactly PASS or FAIL.
