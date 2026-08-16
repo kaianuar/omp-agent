@@ -75,14 +75,20 @@ const MAX_DIFF=30000;
 if (Buffer.byteLength(diff,'utf8')>MAX_DIFF){
   const head=diff.slice(0,Math.floor(MAX_DIFF/2));
   const tail=diff.slice(-Math.floor(MAX_DIFF/2));
-  diff=`${head}\n...[truncated ${Buffer.byteLength(diff,'utf8')-MAX_DIFF} bytes]...\n${tail}`;
+  diff=head+'\n...[truncated '+(Buffer.byteLength(diff,'utf8')-MAX_DIFF)+' bytes]...\n'+tail;
 }
 let req='';
 try { req=fs.readFileSync(reqFile,'utf8').slice(0,8000); } catch(e){}
 // Load this critic's OWN prior verdicts (its review history) so it can see what
 // it already asked for and avoid contradicting itself or re-raising settled items.
 let history='';
-try { history=fs.readFileSync(histFile,'utf8').slice(-6000); } catch(e){};
+try { history=fs.readFileSync(histFile,'utf8').slice(-6000); } catch(e){}
+// Escape backticks and template-literal expressions in user-controlled content
+// so they cannot break the template literal that builds the prompt.
+const esc = s => (s||'').replace(/[`\\]/g, '\\$&').replace(/\$\{/g, '\\${');
+const historyBlock = esc(history);
+const reqBlock = esc(req);
+const diffBlock = esc(diff);
 // scope-aware severity instruction
 const scope = standard==='mvp'
   ? `GRADING (MVP standard): Use strict judgement. A real correctness or security defect MUST be FAIL.
@@ -95,16 +101,16 @@ const prompt=`You are an adversarial code reviewer. A builder produced the diff 
 ${scope}
 
 PROJECT REQUIREMENTS / SCOPE (in/out-of-scope context):
-${req}
+${reqBlock}
 
-YOUR PRIOR REVIEWS OF THIS CODE (history — read and honor it):
-${history||'(none yet)'}
+YOUR PRIOR REVIEWS OF THIS CODE (history - read and honor it):
+${historyBlock||'(none yet)'}
 - If HISTORY is present: it records what you ALREADY told the builder to change in
   earlier rounds. Treat resolved items as resolved; do NOT re-raise the same defect
   as a blocker, and do not contradict a ruling you already gave. Only NEW,
   not-yet-raised defects may become blockers.
 
-VETO DISCIPLINE — these rules govern your ENTIRE review:
+VETO DISCIPLINE - these rules govern your ENTIRE review:
 - REQUIREMENTS ARE THE HIGHEST AUTHORITY. If the code follows a design the PROJECT
   REQUIREMENTS explicitly mandate (e.g. an extension-based file-type classifier,
   a specific mandated dependency or architecture), you MUST NOT FAIL it for that
@@ -113,7 +119,7 @@ VETO DISCIPLINE — these rules govern your ENTIRE review:
 - SCOPE. Review THIS diff (this phase's code). Do not fail it for later-phase or
   whole-project concerns outside what this diff adds or changes.
 
-SEVERITY CLASSIFICATION — tag EVERY finding with exactly one of these (P0..P4):
+SEVERITY CLASSIFICATION - tag EVERY finding with exactly one of these (P0..P4):
 - P0 = CRITICAL BLOCKER: security vulnerability, data loss/corruption, crash, or a
   clear violation of a REQUIREMENT acceptance criterion. Phase MUST NOT proceed.
 - P1 = MAJOR BLOCKER: a real correctness or logic defect that breaks the build or
@@ -128,7 +134,7 @@ SEVERITY CLASSIFICATION — tag EVERY finding with exactly one of these (P0..P4)
 
 A finding is P0/P1 ONLY if it is a genuine, concrete defect that breaks the build or
 an acceptance criterion in THIS diff. A preference, refactor suggestion, or future
-idea is P3 or P4 — never P0/P1. If a design choice is not contradicted by the
+idea is P3 or P4 - never P0/P1. If a design choice is not contradicted by the
 requirements, treat it as P3 at most.
 
 Tag format: start each finding line with `[P0]`, `[P1]`, `[P2]`, `[P3]`, or `[P4]`.
@@ -140,7 +146,7 @@ End with a SINGLE final line that is PASS if there are NO P0 or P1 findings, els
 Verbatim: if any P0/P1 finding exists, the last line is exactly "FAIL". Otherwise it is exactly "PASS".
 
 DIFF:
-${diff}`;
+${diffBlock}`;
 process.stdout.write(JSON.stringify({
   model,
   messages:[{role:'user',content:prompt}],
