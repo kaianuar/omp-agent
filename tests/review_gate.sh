@@ -137,7 +137,7 @@ an acceptance criterion in THIS diff. A preference, refactor suggestion, or futu
 idea is P3 or P4 - never P0/P1. If a design choice is not contradicted by the
 requirements, treat it as P3 at most.
 
-Tag format: start each finding line with `[P0]`, `[P1]`, `[P2]`, `[P3]`, or `[P4]`.
+Tag format: start each finding line with [P0], [P1], [P2], [P3], or [P4].
 
 Review the diff harshly for correctness, logic, security, edge cases, and test coverage.
 List findings sorted by severity (P0 first, then P1, P2, P3, P4).
