@@ -42,7 +42,7 @@ set -uo pipefail
 
 BUILDER_MODEL="${BUILDER_MODEL:-xiaomi-token-plan-sgp/mimo-v2.5-pro}"
 MAX_PLAN_ROUNDS="${MAX_PLAN_ROUNDS:-5}"
-MAX_PHASE_ROUNDS="${MAX_PHASE_ROUNDS:-5}"
+MAX_PHASE_ROUNDS="${MAX_PHASE_ROUNDS:-8}"
 FINDINGS_FILE="${FINDINGS_FILE:-/tmp/review_verdict.txt}"
 GATE0_VERDICT="/tmp/gate0_verdict.txt"
 RUNLOG="/tmp/last_gate_failure.txt"
