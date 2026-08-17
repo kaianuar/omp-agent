@@ -347,6 +347,10 @@ for PHASE in "${PHASES[@]}"; do
     fi
 
     # GATE 1: tests for this phase.
+    # Ensure the project's toolchain image exists (builder has now scaffolded the
+    # code + manifests, so the stack is known). Cached thereafter; gate.sh runs tests
+    # inside the container, removing host system-lib blockers (dbus/gtk/etc).
+    docker_preflight
     rm -f "${FINDINGS_FILE}"
     set +e
     bash "$PROJ_ROOT/tests/gate.sh" 2>&1 | tee "${RUNLOG}"
