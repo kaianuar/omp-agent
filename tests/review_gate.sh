@@ -27,6 +27,10 @@ CRITIC_REQUIREMENTS="${CRITIC_REQUIREMENTS:-requirements.md}"  # acceptance/scop
 # Review-history file: feed the critic its OWN prior verdicts so it does not
 # contradict earlier rulings or re-raise already-settled items. Appended each round.
 REVIEW_HISTORY_FILE="${REVIEW_HISTORY_FILE:-/tmp/review_history.txt}"
+# Structured issue ledger: per-phase record of findings with OPEN/RESOLVED/BACKLOG
+# status. The critic reads it each round and re-flags ONLY OPEN items, breaking
+# the "re-raise forever" deadlock. Cleared by the pipeline at phase start.
+REVIEW_LEDGER="${REVIEW_LEDGER:-/tmp/review_ledger.txt}"
 OPENROUTER_URL="https://openrouter.ai/api/v1/chat/completions"
 
 echo "==> GATE 2: adversarial review (critic=${CRITIC_MODEL}, standard=${CRITIC_STANDARD}, timeout=${CRITIC_TIMEOUT}s, max_tokens=${CRITIC_MAX_TOKENS})"
@@ -65,9 +69,9 @@ fi
 
 # Build the JSON request with the review prompt + requirements + diff (max_tokens
 # generous for reasoning models; not streamed).
-node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" "$REVIEW_HISTORY_FILE" <<'NODE' > /tmp/review_request.json
+node - "$DIFF_FILE" "$CRITIC_MODEL" "$CRITIC_STANDARD" "$CRITIC_REQUIREMENTS" "$CRITIC_MAX_TOKENS" "$REVIEW_HISTORY_FILE" "$REVIEW_LEDGER" <<'NODE' > /tmp/review_request.json
 const fs=require('fs');
-const [ , , diffFile, model, standard, reqFile, maxTokens, histFile ]=process.argv;
+const [ , , diffFile, model, standard, reqFile, maxTokens, histFile, ledgerFile ]=process.argv;
 // Cap the diff so the OpenRouter request stays under its size limit (large diffs
 // across phases caused 400 "JSON parsing failed"). Head+tail keeps the start and end.
 let diff=fs.readFileSync(diffFile,'utf8');
@@ -83,12 +87,16 @@ try { req=fs.readFileSync(reqFile,'utf8').slice(0,8000); } catch(e){}
 // it already asked for and avoid contradicting itself or re-raising settled items.
 let history='';
 try { history=fs.readFileSync(histFile,'utf8').slice(-6000); } catch(e){}
+// Load the structured ISSUE LEDGER: each previously-raised finding with status.
+let ledger='';
+try { ledger=fs.readFileSync(ledgerFile,'utf8').slice(-4000); } catch(e){}
 // Escape backticks and template-literal expressions in user-controlled content
 // so they cannot break the template literal that builds the prompt.
 const esc = s => (s||'').replace(/[`\\]/g, '\\$&').replace(/\$\{/g, '\\${');
 const historyBlock = esc(history);
 const reqBlock = esc(req);
 const diffBlock = esc(diff);
+const ledgerBlock = esc(ledger||'(no open issues yet)');
 // scope-aware severity instruction
 const scope = standard==='mvp'
   ? `GRADING (MVP standard): Use strict judgement. A real correctness or security defect MUST be FAIL.
@@ -109,6 +117,17 @@ ${historyBlock||'(none yet)'}
   earlier rounds. Treat resolved items as resolved; do NOT re-raise the same defect
   as a blocker, and do not contradict a ruling you already gave. Only NEW,
   not-yet-raised defects may become blockers.
+
+ISSUE LEDGER (structured status of every previously-raised finding):
+${ledgerBlock}
+- Each ledger line is: [P<N>] STATUS <OPEN|RESOLVED|BACKLOG> <description>
+- Re-flag ONLY items marked OPEN. An item marked RESOLVED is closed: do NOT re-raise
+  it as a P0/P1 blocker unless the CURRENT diff shows a demonstrable regression of that
+  exact fix.
+- CONVERGENCE RULE: if the current code satisfies a fix you stated in an earlier round,
+  acknowledge it as resolved and do NOT re-flag it. Do not let an ever-repeating concern
+  block convergence when the described fix is present in the code.
+- New P0/P1 findings this round are the only reasons to FAIL.
 
 VETO DISCIPLINE - these rules govern your ENTIRE review:
 - REQUIREMENTS ARE THE HIGHEST AUTHORITY. If the code follows a design the PROJECT
@@ -214,6 +233,57 @@ REVIEW_NOTES_FILE="${REVIEW_NOTES_FILE:-/tmp/review_notes.txt}"
   echo "VERDICT: ${VERDICT:-unknown}"
   cat /tmp/review_verdict.txt
 } >> "${REVIEW_HISTORY_FILE}" 2>/dev/null
+
+# ── Update the structured ISSUE LEDGER ────────────────────────────────────────
+# Each finding is keyed by a STABLE SYMBOL (e.g. `test_incremental_scan`, a fn or
+# struct name) so re-phrasings of the same issue match. This breaks the
+# "re-raise forever" deadlock: fixed items become RESOLVED and are not re-flagged.
+# OPEN = this round's [P0]/[P1] symbols; RESOLVED = prior OPEN symbols not re-raised.
+REVIEW_LEDGER="${REVIEW_LEDGER:-/tmp/review_ledger.txt}"
+python3 - "$REVIEW_LEDGER" /tmp/review_verdict.txt <<'PYEOF'
+import re, sys, os
+ledger_path, verdict_path = sys.argv[1], sys.argv[2]
+
+def key_of(text):
+    # Stable key: the first backtick-quoted symbol, or the first test_/fn/type-like token.
+    bt = re.search(r'`([A-Za-z_][A-Za-z0-9_:]*)`', text)
+    if bt: return bt.group(1).lower()
+    sym = re.search(r'\b((?:test_)?[a-z][a-z0-9_]{2,})\b', text)
+    return sym.group(1).lower() if sym else text.lower()[:60]
+
+# Prior ledger: key -> (sev, full_text, status)
+prior = {}
+if os.path.exists(ledger_path):
+    for line in open(ledger_path):
+        m = re.match(r'\[P(\d)\]\s+(\w+)\s+(.+)', line.strip())
+        if m:
+            prior[key_of(m.group(3))] = (m.group(1), m.group(3), m.group(2))
+
+cur = []
+verdict = open(verdict_path, encoding='utf-8', errors='replace').read()
+for m in re.finditer(r'\[P(\d)\]\s*(.{0,120})', verdict):
+    sev, txt = m.group(1), m.group(2).strip()
+    if txt and sev in ('0','1','2','3','4'):
+        cur.append((sev, txt, key_of(txt)))
+
+new_lines, seen = [], set()
+for sev, txt, key in cur:
+    seen.add(key)
+    if key in prior and prior[key][0] == sev:
+        status = prior[key][2]  # keep prior status (OPEN/RESOLVED/BACKLOG)
+    else:
+        status = 'OPEN' if sev in ('0','1') else 'BACKLOG'
+    new_lines.append(f"[P{sev}] {status} {txt.strip()[:120]}")
+
+# Prior OPEN P0/P1 whose symbol was NOT re-raised this round -> RESOLVED.
+for key,(psev,ptxt,pstatus) in prior.items():
+    if psev in ('0','1') and key not in seen:
+        new_lines.append(f"[P{psev}] RESOLVED {ptxt.strip()[:120]}")
+
+with open(ledger_path,'w') as f:
+    for l in sorted(set(new_lines), key=lambda x: (x[1:3], x[4:9])):
+        f.write(l.rstrip()+'\n')
+PYEOF
 
 echo "---- critic verdict ----"
 echo "(last verdict token: ${VERDICT:-<none>})"
