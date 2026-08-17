@@ -19,8 +19,54 @@ FAILED=0       # number that failed
 run_cmd() {
   local label="$1"; shift
   echo "==> [gate] ${label}: $*"
-  ( eval "$*" ) || { echo "xx [gate] FAILED -> ${label}: $*"; FAILED=$((FAILED+1)); }
+  local out
+  out="$(eval "$*" 2>&1)"
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "xx [gate] FAILED -> ${label}: $*"
+    FAILED=$((FAILED+1))
+    # Surface an actionable hint for well-known environment/dependency blockers so a
+    # cloned user gets a clear fix instead of a cryptic compile panic.
+    hint_for_failure "$out" "$label"
+  fi
   RUN=$((RUN+1))
+}
+
+# Maps common system-dependency build failures to a clear, actionable fix. A user
+# who clones omp-agent and has missing native libs sees this instead of a raw
+# libdbus-sys/glib-sys panic wall.
+hint_for_failure() {
+  local out="$1" label="$2"
+  # dbus (Tauri GUI on Linux)
+  if printf '%s' "$out" | grep -qiE "dbus-1.*not found|cannot find.*dbus|libdbus-sys|dbus-1\.pc"; then
+    echo ""
+    echo "  >> HINT (${label}): missing 'libdbus-1-dev' (needed by Tauri/GUI builds)."
+    echo "     On Ubuntu/Debian:  sudo apt install -y libdbus-1-dev pkg-config"
+    echo "     On Fedora:         sudo dnf install -y dbus-devel pkgconf-pkg-config"
+    echo "     On macOS:          brew install dbus pkg-config"
+    return
+  fi
+  # glib (GTK, many native crates)
+  if printf '%s' "$out" | grep -qiE "glib-2\.0.*not found|cannot find.*glib|glib-sys|glib-2\.0\.pc"; then
+    echo ""
+    echo "  >> HINT (${label}): missing GLib dev headers (libglib2.0-dev)."
+    echo "     On Ubuntu/Debian:  sudo apt install -y libglib2.0-dev pkg-config"
+    return
+  fi
+  # pkg-config itself
+  if printf '%s' "$out" | grep -qiE "pkg-config.*not found|command 'pkg-config'.*not found"; then
+    echo ""
+    echo "  >> HINT (${label}): pkg-config is not installed."
+    echo "     On Ubuntu/Debian:  sudo apt install -y pkg-config"
+    return
+  fi
+  # generic Rust linker / C compiler missing
+  if printf '%s' "$out" | grep -qiE "linker `cc` not found|cc: error|gcc.*not found|No such file or directory \(os error 2\)"; then
+    echo ""
+    echo "  >> HINT (${label}): a C compiler / linker is missing (needed to build native crates)."
+    echo "     On Ubuntu/Debian:  sudo apt install -y build-essential"
+    return
+  fi
 }
 
 # --- Auto-detect: Node (often has workspaces / client+server) ---
