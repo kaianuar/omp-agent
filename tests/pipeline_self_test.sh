@@ -16,6 +16,7 @@ LIB="$HERE/lib"
 PASS=0
 FAIL=0
 WORK="$(mktemp -d)"
+DIR="$(pwd)"
 trap 'rm -rf "$WORK"' EXIT
 
 note()  { printf '%s\n' "$*"; }
@@ -123,6 +124,49 @@ printf '[P1] the `foo` function is broken\nFAIL\n' > "$WORK/r4.txt"
 python3 "$PY" "$LED" "$WORK/r4.txt"
 n="$(grep -c 'foo' "$LED")"
 [ "$n" -le 2 ] && ok "stable key: no duplicate explosion ($n foo refs)" || no "foo duped: [$n]"
+
+# =============================================================================
+# 5. Docker install-command selection (runtime-based, from project's own manifests)
+# =============================================================================
+note ""
+note "## 5. docker_install_cmd"
+docker_install_cmd() {
+  if [ -f package.json ]; then
+    if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+      echo "npm ci --no-audit --no-fund || npm install"
+    else
+      echo "npm install --no-audit --no-fund"
+    fi
+  elif [ -f composer.json ]; then
+    echo "composer install --no-interaction --prefer-dist --no-progress"
+  elif [ -f requirements.txt ]; then
+    echo "pip install --no-cache-dir -r requirements.txt"
+  elif [ -f pyproject.toml ]; then
+    echo "pip install -e . 2>/dev/null || pip install ."
+  fi
+}
+# Node with lockfile -> npm ci
+mkdir -p "$WORK/node_lock" && cd "$WORK/node_lock"
+printf '{}' > package.json && printf 'x' > package-lock.json
+c="$(docker_install_cmd)"; echo "$c" | grep -q 'npm ci' && ok "node lockfile -> npm ci" || no "node lockfile: $c"
+# Node without lockfile -> npm install
+mkdir -p "$WORK/node_nolock" && cd "$WORK/node_nolock"
+printf '{}' > package.json
+c="$(docker_install_cmd)"; echo "$c" | grep -q 'npm install' && ! echo "$c" | grep -q 'npm ci' && ok "node no-lockfile -> npm install" || no "node nolock: $c"
+# PHP -> composer install
+mkdir -p "$WORK/php" && cd "$WORK/php"
+printf '{}' > composer.json
+c="$(docker_install_cmd)"; echo "$c" | grep -q 'composer install' && ok "php -> composer install" || no "php: $c"
+# Python requirements
+mkdir -p "$WORK/py" && cd "$WORK/py"
+printf 'x' > requirements.txt
+c="$(docker_install_cmd)"; echo "$c" | grep -q 'pip install' && ok "python -> pip install" || no "python: $c"
+# Rust -> empty (cargo test builds transitively)
+mkdir -p "$WORK/rust" && cd "$WORK/rust"
+printf '[package]\n' > Cargo.toml && printf '[workspace]\n' >> Cargo.toml
+c="$(docker_install_cmd)"; [ -z "$c" ] && ok "rust -> no explicit install" || no "rust: $c"
+
+cd "$DIR"
 
 # =============================================================================
 # summary

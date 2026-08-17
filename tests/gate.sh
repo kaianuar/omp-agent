@@ -16,12 +16,53 @@ cd "$(dirname "$0")/.."
 RUN=0          # number of suites actually run
 FAILED=0       # number that failed
 
+# Returns the project's own dependency-install command, derived from ITS manifests
+# (not a curated framework list). Next.js/Nuxt/React -> node json deps; LAMP -> composer;
+# Python -> pip. Empty = no install needed (cargo test / go test build transitively).
+docker_install_cmd() {
+  if [ -f package.json ]; then
+    if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+      echo "npm ci --no-audit --no-fund || npm install"
+    else
+      echo "npm install --no-audit --no-fund"
+    fi
+  elif [ -f composer.json ]; then
+    echo "composer install --no-interaction --prefer-dist --no-progress"
+  elif [ -f requirements.txt ]; then
+    echo "pip install --no-cache-dir -r requirements.txt"
+  elif [ -f pyproject.toml ]; then
+    echo "pip install -e . 2>/dev/null || pip install ."
+  fi
+  # Rust/Go: no explicit install step; cargo test / go test build from lockfiles.
+}
+
 run_cmd() {
   local label="$1"; shift
   echo "==> [gate] ${label}: $*"
-  local out
-  out="$(eval "$*" 2>&1)"
-  local rc=$?
+  local out rc
+  # When a toolchain image is provided (pipeline docker preflight), run the project's
+  # own install step then the test INSIDE the container. The container has the native
+  # build deps (dbus/gtk/webkit2gtk...), removing host-lib blockers.
+  if [ -n "${OMP_DOCKER_IMAGE:-}" ]; then
+    echo "==> [gate] (docker: ${OMP_DOCKER_IMAGE})"
+    local inst
+    inst="$(docker_install_cmd)"
+    # Source the image's toolchain env (cargo/rustup live under CARGO_HOME inside the
+    # container) and mount project at /app. Run install if one is declared, then the test.
+    # The test command is passed via env var CMD to avoid `--`/`$*` parsing quirks.
+    out="$(docker run --rm \
+            -v "$(pwd)":/app -w /app \
+            -e INSTALL="$inst" \
+            -e CMD="$*" \
+            "${OMP_DOCKER_IMAGE}" bash -lc \
+            'export PATH="${CARGO_HOME:-/root/.cargo}/bin:/usr/local/bin:$PATH"; export HOME=/root; \
+             [ -z "$INSTALL" ] || { echo "--[gate] install: $INSTALL"; eval "$INSTALL" || exit 1; }; \
+             { [ -n "$CMD" ] && eval "$CMD" || exit 0; }' 2>&1)"
+    rc=$?
+  else
+    out="$(eval "$*" 2>&1)"
+    rc=$?
+  fi
   if [ "$rc" -ne 0 ]; then
     echo "xx [gate] FAILED -> ${label}: $*"
     FAILED=$((FAILED+1))
