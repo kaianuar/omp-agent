@@ -238,52 +238,9 @@ REVIEW_NOTES_FILE="${REVIEW_NOTES_FILE:-/tmp/review_notes.txt}"
 # Each finding is keyed by a STABLE SYMBOL (e.g. `test_incremental_scan`, a fn or
 # struct name) so re-phrasings of the same issue match. This breaks the
 # "re-raise forever" deadlock: fixed items become RESOLVED and are not re-flagged.
-# OPEN = this round's [P0]/[P1] symbols; RESOLVED = prior OPEN symbols not re-raised.
+# Logic lives in tests/lib/review_ledger.py (single source of truth, self-tested).
 REVIEW_LEDGER="${REVIEW_LEDGER:-/tmp/review_ledger.txt}"
-python3 - "$REVIEW_LEDGER" /tmp/review_verdict.txt <<'PYEOF'
-import re, sys, os
-ledger_path, verdict_path = sys.argv[1], sys.argv[2]
-
-def key_of(text):
-    # Stable key: the first backtick-quoted symbol, or the first test_/fn/type-like token.
-    bt = re.search(r'`([A-Za-z_][A-Za-z0-9_:]*)`', text)
-    if bt: return bt.group(1).lower()
-    sym = re.search(r'\b((?:test_)?[a-z][a-z0-9_]{2,})\b', text)
-    return sym.group(1).lower() if sym else text.lower()[:60]
-
-# Prior ledger: key -> (sev, full_text, status)
-prior = {}
-if os.path.exists(ledger_path):
-    for line in open(ledger_path):
-        m = re.match(r'\[P(\d)\]\s+(\w+)\s+(.+)', line.strip())
-        if m:
-            prior[key_of(m.group(3))] = (m.group(1), m.group(3), m.group(2))
-
-cur = []
-verdict = open(verdict_path, encoding='utf-8', errors='replace').read()
-for m in re.finditer(r'\[P(\d)\]\s*(.{0,120})', verdict):
-    sev, txt = m.group(1), m.group(2).strip()
-    if txt and sev in ('0','1','2','3','4'):
-        cur.append((sev, txt, key_of(txt)))
-
-new_lines, seen = [], set()
-for sev, txt, key in cur:
-    seen.add(key)
-    if key in prior and prior[key][0] == sev:
-        status = prior[key][2]  # keep prior status (OPEN/RESOLVED/BACKLOG)
-    else:
-        status = 'OPEN' if sev in ('0','1') else 'BACKLOG'
-    new_lines.append(f"[P{sev}] {status} {txt.strip()[:120]}")
-
-# Prior OPEN P0/P1 whose symbol was NOT re-raised this round -> RESOLVED.
-for key,(psev,ptxt,pstatus) in prior.items():
-    if psev in ('0','1') and key not in seen:
-        new_lines.append(f"[P{psev}] RESOLVED {ptxt.strip()[:120]}")
-
-with open(ledger_path,'w') as f:
-    for l in sorted(set(new_lines), key=lambda x: (x[1:3], x[4:9])):
-        f.write(l.rstrip()+'\n')
-PYEOF
+python3 "$PROJ_ROOT/tests/lib/review_ledger.py" "$REVIEW_LEDGER" /tmp/review_verdict.txt
 
 echo "---- critic verdict ----"
 echo "(last verdict token: ${VERDICT:-<none>})"
