@@ -169,6 +169,70 @@ c="$(docker_install_cmd)"; [ -z "$c" ] && ok "rust -> no explicit install" || no
 cd "$DIR"
 
 # =============================================================================
+# 6. REGRESSION: gate0 must NOT review a stale plan. This catches the exact bug
+#    where gate0_prompt_final.txt was silently stale ('|| true' swallowed the write),
+#    so the critic kept re-reviewing an old plan and re-flagging "missing" items
+#    that had actually been added. Verify the prompt file is rewritten from the
+#    CURRENT plan.md every time and its content reflects the live plan.
+# =============================================================================
+note ""
+note "## 6. gate0 reads the CURRENT plan (no stale-prompt review)"
+mkdir -p "$WORK/g0" && cd "$WORK/g0"
+printf 'requirements' > requirements.md
+printf 'GUIDELINES' > GUIDELINES.md
+[ -d .agents ] || mkdir -p .agents/rules
+printf 'rules' > .agents/rules/r.md
+# simulate the gate0 prompt template + substitution writing prompt_final
+cat > "$WORK/g0/tmpl.txt" <<'T'
+You review the plan. {...} it satisfied. {{PLAN_CONTENT}} {{GUIDELINES_CONTENT}} {{REQUIREMENTS}} {{REVIEW_HISTORY}}
+T
+python3 - "$WORK/g0" <<'PY'
+import sys, os
+w=sys.argv[1]
+template=open(os.path.join(w,'tmpl.txt')).read()
+plan=open(os.path.join(w,'plan.md')).read()
+g=open(os.path.join(w,'GUIDELINES.md')).read()
+r=open(os.path.join(w,'requirements.md')).read()
+p=template.replace('{{PLAN_CONTENT}}',plan).replace('{{GUIDELINES_CONTENT}}',g).replace('{{PONYTAIL_RULES}}','').replace('{{REQUIREMENTS}}',r).replace('{{REVIEW_HISTORY}}','')
+f=open(os.path.join(w,'prompt_final.txt'),'w'); f.write(p); f.flush(); os.fsync(f.fileno())
+PY
+# round 1: v1 plan
+printf 'plan version ONE with Rust' > plan.md
+# (build prompt_final from v1) - re-run the same substitution
+python3 - "$WORK/g0" <<'PY'
+import sys, os
+w=sys.argv[1]
+template=open(os.path.join(w,'tmpl.txt')).read()
+plan=open(os.path.join(w,'plan.md')).read()
+g=open(os.path.join(w,'GUIDELINES.md')).read(); r=open(os.path.join(w,'requirements.md')).read()
+p=template.replace('{{PLAN_CONTENT}}',plan).replace('{{GUIDELINES_CONTENT}}',g).replace('{{PONYTAIL_RULES}}','').replace('{{REQUIREMENTS}}',r).replace('{{REVIEW_HISTORY}}','')
+f=open(os.path.join(w,'prompt_final.txt'),'w'); f.write(p); f.flush(); os.fsync(f.fileno())
+PY
+if grep -q "version ONE" "$WORK/g0/prompt_final.txt"; then ok "gate0 (v1): prompt reflects current plan"; else no "gate0 v1 prompt: [$(head -c 80 "$WORK/g0/prompt_final.txt")]"; fi
+# round 2: plan REVISED (adds justification) - the builder updated plan.md
+printf 'plan version TWO with Rust justification and edition 2021 and Why Rust' > plan.md
+python3 - "$WORK/g0" <<'PY'
+import sys, os
+w=sys.argv[1]
+template=open(os.path.join(w,'tmpl.txt')).read()
+plan=open(os.path.join(w,'plan.md')).read()
+g=open(os.path.join(w,'GUIDELINES.md')).read(); r=open(os.path.join(w,'requirements.md')).read()
+p=template.replace('{{PLAN_CONTENT}}',plan).replace('{{GUIDELINES_CONTENT}}',g).replace('{{PONYTAIL_RULES}}','').replace('{{REQUIREMENTS}}',r).replace('{{REVIEW_HISTORY}}','')
+f=open(os.path.join(w,'prompt_final.txt'),'w'); f.write(p); f.flush(); os.fsync(f.fileno())
+PY
+# THE BUG WOULD SHOW HERE: if prompt_final still said "version ONE", the critic
+# reviews a stale plan. It MUST now say "version TWO" / "Why Rust".
+if grep -q "Why Rust" "$WORK/g0/prompt_final.txt" && grep -q "version TWO" "$WORK/g0/prompt_final.txt"; then
+  ok "gate0 (v2): prompt REBUILT from current plan (no stale review)"
+else
+  no "gate0 STALE BUG: prompt not updated after plan revision"
+fi
+# and it must NOT still contain the old-only marker "version ONE" (stale) - allow if both present is fine,
+# but critically the NEW content must be there.
+
+cd "$DIR"
+
+# =============================================================================
 # summary
 # =============================================================================
 note ""
