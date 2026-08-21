@@ -13,7 +13,7 @@ import os
 import httpx
 
 DEFAULT_BASE = "https://api.commandcode.ai/provider/v1"
-DEFAULT_MODEL = "commandcode/xiaomi/mimo-v2.5-pro"
+DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro"
 
 
 def _config() -> tuple[str, str, str]:
