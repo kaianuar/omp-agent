@@ -95,3 +95,27 @@ def _trim_brief(brief: str, max_chars: int = 8000) -> str:
         return brief
     # Keep the first (charter) and last (preferences) sections.
     return brief[:max_chars] + "\n\n...[truncated for recipe generation]"
+
+
+def run_review(
+    task_id: int,
+    pr_url: str,
+    diff: str,
+    sink: EventSink,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """REVIEW — critic (read-only) reviews the PR diff → P0-P4 verdicts.
+
+    Emits critic_verdict with the raw text + PASS/FAIL. The machine decides
+    whether to fix-round (P0/P1) or surface to the user (P2+).
+    """
+    system, user = prompts.review_prompt(pr_url, diff)
+    verdict_text = llm.chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.1,
+        max_tokens=3000,
+        model=model or llm.CRITIC_MODEL,
+    )
+    passed = "VERDICT: PASS" in verdict_text.upper()
+    _emit(sink, task_id, "critic_verdict", {"passed": passed, "text": verdict_text})
+    return {"passed": passed, "text": verdict_text}

@@ -109,11 +109,24 @@ class TaskRunner:
         recipe = _read_file(task.get("recipe_path")) if task.get("recipe_path") else ""
         db.update_task_state(self.task_id, "building")
         # Dispatch builder; v1: blocking call (runs omp), emits events.
-        pexec.dispatch_build(
+        build = pexec.dispatch_build(
             self.task_id, self.repo_path, self.scratch_dir, recipe, self._sink
         )
-        # After build → review/verify (v1: verify = run the recipe's checks
-        # via exec; simplified to emit verify_result from exec output).
+        # REVIEW: get the PR diff, run the critic (P0-P4 verdicts).
+        db.update_task_state(self.task_id, "reviewing")
+        pr_url, diff = pexec.get_pr_diff(self.repo_path)
+        if pr_url:
+            self._sink(self.task_id, "pr_ready", {"url": pr_url})
+            db.update_task_state(self.task_id, "reviewing", pr_url=pr_url)
+            verdict = phases.run_review(self.task_id, pr_url, diff, self._sink)
+            if not verdict["passed"]:
+                # P0/P1 → fix round (v1: surface to user; auto-fix comes later).
+                db.update_task_state(self.task_id, "awaiting_fix_decision")
+                self._sink(self.task_id, "fix_needed", {"verdict": verdict["text"]})
+                return
+        else:
+            self._sink(self.task_id, "no_pr", {"note": "no open PR found for review"})
+        # VERIFY: run the recipe's verification commands.
         db.update_task_state(self.task_id, "verifying")
         pexec.run_verify(
             self.task_id, self.repo_path, recipe, self._sink

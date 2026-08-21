@@ -20,6 +20,10 @@ DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro"
 # generations; V2.5 generates long-form reliably.
 RECIPE_MODEL = "xiaomi/mimo-v2.5"
 
+# Adversarial review (critic) — a DIFFERENT model than the builder to
+# avoid self-review bias. Muse Spark Contributor is cheap + reliable.
+CRITIC_MODEL = "meta/muse-spark-1.2-contributor"
+
 
 def _config() -> tuple[str, str, str]:
     base = os.environ.get("OMP_LLM_BASE_URL", DEFAULT_BASE).rstrip("/")

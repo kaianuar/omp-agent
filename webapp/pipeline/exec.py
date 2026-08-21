@@ -102,3 +102,18 @@ def run_verify(task_id: int, repo_path: str, recipe: str, sink: EventSink) -> di
             sink(task_id, "verify_step", {"cmd": line, "exit_code": code})
     sink(task_id, "verify_result", {"results": results})
     return {"results": results}
+
+
+def get_pr_diff(repo_path: str) -> tuple[str | None, str]:
+    """Get the current branch's PR diff via gh.
+
+    Returns (pr_url, diff). pr_url is None if no PR/open branch.
+    """
+    code, out = _run(["gh", "pr", "view", "--json", "url,number", "--jq", ".url"], repo_path, 30)
+    pr_url = out.strip() if code == 0 and out.strip() else None
+    if not pr_url:
+        return None, ""
+    code2, diff = _run(["gh", "pr", "diff"], repo_path, 60)
+    if code2 != 0:
+        return pr_url, f"(could not fetch diff: {diff[:200]})"
+    return pr_url, diff[-40000:]

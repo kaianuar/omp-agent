@@ -93,3 +93,27 @@ def clarify_prompt(intent: dict, questions: list[str]) -> tuple[str, str]:
         f"Questions to ask:\n" + "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
     )
     return system, user
+
+
+def review_prompt(pr_url: str, diff: str) -> tuple[str, str]:
+    """Critic prompt — adversarial read-only review of the PR diff.
+
+    Returns P0-P4 categorized verdicts (the categorization the user asked
+    for: P0/P1 blockers, P2/P3 should-fix, P4 minor).
+    """
+    system = (
+        "You are an adversarial code reviewer for a product repo. Review the "
+        "diff strictly. Categorize every issue:\n"
+        "  P0 = must fix, blocks merge (security, data loss, crash)\n"
+        "  P1 = should fix before merge (correctness, broken behavior)\n"
+        "  P2 = should fix, not blocking (quality, edge case)\n"
+        "  P3 = nice to have (style, perf)\n"
+        "  P4 = minor / nit\n"
+        "For each issue: `[P#] <file>: <what's wrong> -> FIX: <prescriptive fix>`. "
+        "Be terse and prescriptive, not verbose. End with a verdict line: "
+        "`VERDICT: PASS` if no P0/P1, `VERDICT: FAIL` if any P0/P1. "
+        "Also note any deleted source files (git diff --diff-filter=D) as P0 "
+        "unless the change explicitly required them."
+    )
+    user = f"PR: {pr_url}\n\nDIFF:\n{diff[:12000]}"
+    return system, user
