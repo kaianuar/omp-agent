@@ -40,6 +40,37 @@ body {
 .tiny { font-size: 11px; line-height: 1.5; word-break: break-all; }
 .muted { color: var(--muted); }
 
+/* Project selector */
+.rail select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 13px;
+  width: 100%;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 0;
+}
+.link-btn:hover { text-decoration: underline; }
+.new-project { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.new-project input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+  width: 100%;
+}
+
 /* Chat */
 .chat { flex: 1; display: flex; flex-direction: column; }
 .chat-header {

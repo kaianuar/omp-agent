@@ -82,20 +82,26 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void) {
 
 export default function App() {
   const [project, setProject] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [task, setTask] = useState<Task | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [denyLog, setDenyLog] = useState<string[]>([]);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjName, setNewProjName] = useState('');
+  const [newProjPath, setNewProjPath] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-bind a project + session on first load (v1: create diskscope if none).
+  // Load all projects; auto-select the first (or create a default).
   useEffect(() => {
     void (async () => {
       const projects = await api.listProjects();
+      setProjects(projects);
       if (projects.length === 0) {
         const p = await api.createProject('diskscope', '/home/kaianuar/code/diskscope', '/tmp/omp-web-scratch');
+        setProjects([p]);
         setProject(p);
         const s = await api.startSession(p.id);
         setSession(s);
@@ -106,6 +112,32 @@ export default function App() {
       }
     })();
   }, []);
+
+  // Switch project → new session, reset task state.
+  const switchProject = async (pid: number) => {
+    const p = projects.find((x) => x.id === pid);
+    if (!p) return;
+    await selectProject(p);
+  };
+
+  // Select a project directly (no lookup needed).
+  const selectProject = async (p: Project) => {
+    setProject(p);
+    setTask(null);
+    setEvents([]);
+    const s = await api.startSession(p.id);
+    setSession(s);
+  };
+
+  const createProject = async () => {
+    if (!newProjName.trim() || !newProjPath.trim()) return;
+    const p = await api.createProject(newProjName.trim(), newProjPath.trim(), `/tmp/omp-web-${newProjName.trim()}`);
+    setProjects((prev) => [...prev, p]);
+    setShowNewProject(false);
+    setNewProjName('');
+    setNewProjPath('');
+    await selectProject(p);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -162,8 +194,42 @@ export default function App() {
         <h2>omp</h2>
         <div className="rail-section">
           <b>Project</b>
-          <div className="muted">{project?.name ?? '…'}</div>
-          <div className="tiny muted">{project?.repo_path ?? ''}</div>
+          <select
+            data-testid="project-select"
+            value={project?.id ?? ''}
+            onChange={(e) => void switchProject(Number(e.target.value))}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <div className="tiny muted" title={project?.repo_path ?? ''}>
+            {project?.repo_path ?? ''}
+          </div>
+          {!showNewProject ? (
+            <button className="link-btn" data-testid="new-project-btn" onClick={() => setShowNewProject(true)}>
+              + New project
+            </button>
+          ) : (
+            <div className="new-project">
+              <input
+                data-testid="new-proj-name"
+                placeholder="name"
+                value={newProjName}
+                onChange={(e) => setNewProjName(e.target.value)}
+              />
+              <input
+                data-testid="new-proj-path"
+                placeholder="/path/to/repo"
+                value={newProjPath}
+                onChange={(e) => setNewProjPath(e.target.value)}
+              />
+              <div className="actions">
+                <button data-testid="new-proj-create" onClick={() => void createProject()}>Create</button>
+                <button onClick={() => setShowNewProject(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="rail-section">
           <b>Task</b>
