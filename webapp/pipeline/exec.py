@@ -1,0 +1,98 @@
+"""Pipeline exec — talks to the real world.
+
+- dispatch_build: runs omp (the builder) with the recipe, monitors, emits
+  build events.
+- run_verify: runs the recipe's verification commands (fmt/clippy/tests),
+  emits verify_result.
+
+All side effects (subprocess, scratch writes) live here — never in the
+orchestrator phases. The orchestrator stays pure.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from typing import Any, Callable
+
+EventSink = Callable[[int, str, dict[str, Any]], None]
+
+BUILD_TIMEOUT_S = int(os.environ.get("OMP_BUILD_TIMEOUT_S", "1500"))
+VERIFY_TIMEOUT_S = int(os.environ.get("OMP_VERIFY_TIMEOUT_S", "600"))
+
+
+def _run(cmd: list[str], cwd: str, timeout: int) -> tuple[int, str]:
+    """Run a command, return (exit_code, combined_output)."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return proc.returncode, out[-4000:]
+    except subprocess.TimeoutExpired:
+        return 124, f"TIMEOUT after {timeout}s"
+    except FileNotFoundError:
+        return 127, f"command not found: {cmd[0]}"
+
+
+def _builder_cmd(recipe_path: str, repo_path: str) -> list[str]:
+    """Build the omp invocation from the recipe file."""
+    # omp lives at ~/.bun/bin/omp — ensure it's on PATH for the subprocess.
+    env = dict(os.environ)
+    env["PATH"] = os.path.expanduser("~/.bun/bin") + os.pathsep + env.get("PATH", "")
+    model = os.environ.get("OMP_BUILDER_MODEL", "commandcode/xiaomi/mimo-v2.5-pro")
+    return [
+        "omp",
+        "--print",
+        "--model",
+        model,
+        "--append-system-prompt",
+        f"Recipe file: {recipe_path}\nApply this recipe exactly. Follow the workflow requirements. Report when done.",
+        "Apply the recipe at the given path. Run the verification steps. Open a PR when finished.",
+    ]
+
+
+def dispatch_build(
+    task_id: int, repo_path: str, scratch_dir: str, recipe: str, sink: EventSink
+) -> dict[str, Any]:
+    """Run the builder (omp) with the recipe. Emits build events.
+
+    v1: blocking. The recipe is written to the project's scratch dir first
+    (the only file the builder needs to read) — but the builder writes code
+    into the repo, which is its job.
+    """
+    # Write recipe to scratch so the builder has a stable path to read.
+    from webapp.pipeline import sandbox
+
+    recipe_path = sandbox.sandboxed_write(scratch_dir, repo_path, "recipe.md", recipe)
+    sink(task_id, "build_started", {"recipe_path": str(recipe_path)})
+    cmd = _builder_cmd(str(recipe_path), repo_path)
+    code, output = _run(cmd, repo_path, BUILD_TIMEOUT_S)
+    sink(task_id, "build_done", {"exit_code": code, "output": output})
+    return {"exit_code": code, "output": output}
+
+
+def run_verify(task_id: int, repo_path: str, recipe: str, sink: EventSink) -> dict[str, Any]:
+    """Run the recipe's verification commands (heuristic for v1).
+
+    v1: extracts ```-fenced shell blocks from the recipe and runs them.
+    This is crude but works for the recipes we author (they contain exact
+    verify commands). Refine later (structured verify steps in the recipe).
+    """
+    import re
+
+    results = []
+    for block in re.findall(r"```(?:sh|bash)?\n(.*?)```", recipe, re.S):
+        for line in block.strip().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            code, output = _run(["bash", "-lc", line], repo_path, VERIFY_TIMEOUT_S)
+            results.append({"cmd": line, "exit_code": code, "output": output[-800:]})
+            sink(task_id, "verify_step", {"cmd": line, "exit_code": code})
+    sink(task_id, "verify_result", {"results": results})
+    return {"results": results}

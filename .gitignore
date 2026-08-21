@@ -33,3 +33,7 @@ test-results/
 .DS_Store
 .idea/
 .vscode/
+# web app runtime
+.venv-web/
+webapp/data/*.db
+webapp/data/deny.log
