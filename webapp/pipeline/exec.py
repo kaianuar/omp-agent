@@ -40,8 +40,14 @@ def _run(cmd: list[str], cwd: str, timeout: int) -> tuple[int, str]:
 
 
 def _builder_cmd(recipe_path: str, repo_path: str) -> list[str]:
-    """Build the omp invocation from the recipe file."""
-    # omp lives at ~/.bun/bin/omp — ensure it's on PATH for the subprocess.
+    """Build the omp invocation from the recipe file.
+
+    The recipe text is INLINED into --append-system-prompt (omp takes the
+    prompt text, not a file reference).
+    """
+    from pathlib import Path
+
+    recipe = Path(recipe_path).read_text(encoding="utf-8") if Path(recipe_path).exists() else ""
     env = dict(os.environ)
     env["PATH"] = os.path.expanduser("~/.bun/bin") + os.pathsep + env.get("PATH", "")
     model = os.environ.get("OMP_BUILDER_MODEL", "commandcode/xiaomi/mimo-v2.5-pro")
@@ -51,8 +57,8 @@ def _builder_cmd(recipe_path: str, repo_path: str) -> list[str]:
         "--model",
         model,
         "--append-system-prompt",
-        f"Recipe file: {recipe_path}\nApply this recipe exactly. Follow the workflow requirements. Report when done.",
-        "Apply the recipe at the given path. Run the verification steps. Open a PR when finished.",
+        recipe,
+        "Apply this recipe exactly. Follow the workflow requirements (branch off main, incremental commits, PR). Run the verification steps. Report when done.",
     ]
 
 
