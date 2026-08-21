@@ -37,3 +37,5 @@ test-results/
 .venv-web/
 webapp/data/*.db
 webapp/data/deny.log
+webapp/web/node_modules/
+webapp/web/dist/
