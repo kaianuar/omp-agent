@@ -141,7 +141,8 @@ def dispatch_fix_round(
         f"{verdicts}\n\n"
         "RULES:\n"
         "- PRESERVE all existing code. Do NOT delete or rewrite unrelated code.\n"
-        "- Work on the existing branch; amend/extend the PR (new commits).\n"
+        "- STAY ON the current branch — do NOT create or switch branches. "
+        "Amend/extend the existing PR with new commits on THIS branch.\n"
         "- Run the verification steps after fixing; ensure all tests pass.\n"
         "- Report what you fixed."
     )
