@@ -136,14 +136,26 @@ with the orchestrator role played manually (design docs, recipes, verification).
 - **Scratch browser** — show what the orchestrator wrote to scratch (tests,
   recipes) so the user can see its reasoning artifacts.
 
-## 6. Build Order (phased)
+## 6. Build Order (phased) — REVISED 2026-08-21: web-first
 
-1. **Orchestrator agent (headless/CLI)** — the loop: receive feedback → design
-   doc → recipe → dispatch → verify → report. Hardest part; test it on
-   diskscope. This is the make-or-break.
-2. **Web UI (chat + pipeline view)** — thin presentation over the engine.
-3. **Onboarding** — repo binding, key setup, AGENTS.md ingestion.
-4. **Multi-project + persistence** — sessions, history, scratch retention.
+Pivot: build the **web UI first**, with the engine running behind it. The
+web app IS the product; the CLI/headless engine is an internal detail.
+Less use for standalone CLI commands.
+
+1. **Web app shell (frontend)** — chat panel + pipeline view + approve/
+   adjust/reject controls. The conversation surface (the product).
+2. **Engine behind it** — the orchestrator loop (state machine + context
+   pack + templates) as the web app's backend: receive feedback → design
+   doc → recipe → dispatch builder → critic → verify → report.
+3. **Sandbox/permission layer** — orchestrator writes only to scratch,
+   never the project (realpath-guarded).
+4. **Project binding + onboarding** — repo binding, API keys, AGENTS.md
+   ingestion.
+5. **Multi-project + persistence** — sessions, history, scratch retention.
+
+The brain (ORCHESTRATOR_BRAIN.md) drives the engine regardless of surface.
+Web-first just changes what we build first: the conversation + pipeline UI,
+with the loop wired behind it.
 
 ## 7. Open Questions
 
