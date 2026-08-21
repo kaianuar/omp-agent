@@ -109,23 +109,35 @@ class TaskRunner:
         recipe = _read_file(task.get("recipe_path")) if task.get("recipe_path") else ""
         db.update_task_state(self.task_id, "building")
         # Dispatch builder; v1: blocking call (runs omp), emits events.
-        build = pexec.dispatch_build(
+        pexec.dispatch_build(
             self.task_id, self.repo_path, self.scratch_dir, recipe, self._sink
         )
-        # REVIEW: get the PR diff, run the critic (P0-P4 verdicts).
+        # REVIEW → auto-fix loop: critic FAIL (P0/P1) → re-dispatch builder
+        # with verdicts as context → re-review, up to MAX_FIX_ROUNDS.
         db.update_task_state(self.task_id, "reviewing")
-        pr_url, diff = pexec.get_pr_diff(self.repo_path)
-        if pr_url:
+        for round_no in range(1, pexec.MAX_FIX_ROUNDS + 1):
+            pr_url, diff = pexec.get_pr_diff(self.repo_path)
+            if not pr_url:
+                self._sink(self.task_id, "no_pr", {"note": "no open PR found for review"})
+                break
             self._sink(self.task_id, "pr_ready", {"url": pr_url})
             db.update_task_state(self.task_id, "reviewing", pr_url=pr_url)
             verdict = phases.run_review(self.task_id, pr_url, diff, self._sink)
-            if not verdict["passed"]:
-                # P0/P1 → fix round (v1: surface to user; auto-fix comes later).
+            if verdict["passed"]:
+                self._sink(self.task_id, "critic_passed", {"round": round_no})
+                break
+            if round_no >= pexec.MAX_FIX_ROUNDS:
+                # Escalate to user after max rounds (don't loop forever).
                 db.update_task_state(self.task_id, "awaiting_fix_decision")
-                self._sink(self.task_id, "fix_needed", {"verdict": verdict["text"]})
+                self._sink(self.task_id, "fix_exhausted", {"verdict": verdict["text"]})
                 return
-        else:
-            self._sink(self.task_id, "no_pr", {"note": "no open PR found for review"})
+            # Fix round: re-dispatch builder with the critic's verdicts.
+            self._sink(self.task_id, "fix_round_started", {"round": round_no})
+            db.update_task_state(self.task_id, "fixing")
+            pexec.dispatch_fix_round(
+                self.task_id, self.repo_path, self.scratch_dir,
+                recipe, verdict["text"], self._sink,
+            )
         # VERIFY: run the recipe's verification commands.
         db.update_task_state(self.task_id, "verifying")
         pexec.run_verify(

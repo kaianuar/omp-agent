@@ -20,6 +20,9 @@ EventSink = Callable[[int, str, dict[str, Any]], None]
 BUILD_TIMEOUT_S = int(os.environ.get("OMP_BUILD_TIMEOUT_S", "1500"))
 VERIFY_TIMEOUT_S = int(os.environ.get("OMP_VERIFY_TIMEOUT_S", "600"))
 
+# Max critic fix rounds before escalating to the user (don't loop forever).
+MAX_FIX_ROUNDS = int(os.environ.get("OMP_MAX_FIX_ROUNDS", "3"))
+
 
 def _run(cmd: list[str], cwd: str, timeout: int) -> tuple[int, str]:
     """Run a command, return (exit_code, combined_output)."""
@@ -117,3 +120,34 @@ def get_pr_diff(repo_path: str) -> tuple[str | None, str]:
     if code2 != 0:
         return pr_url, f"(could not fetch diff: {diff[:200]})"
     return pr_url, diff[-40000:]
+
+
+def dispatch_fix_round(
+    task_id: int, repo_path: str, scratch_dir: str,
+    recipe: str, verdicts: str, sink: EventSink,
+) -> dict[str, Any]:
+    """Fix round: re-dispatch the builder with the critic's verdicts.
+
+    The recipe + verdicts are inlined; the builder fixes the PR's issues.
+    "PRESERVE all existing code" is enforced (the deletion-guard lesson).
+    """
+    from webapp.pipeline import sandbox
+
+    fix_prompt = (
+        "The critic found blocking issues in your PR. Fix ALL of them.\n\n"
+        "=== ORIGINAL RECIPE ===\n"
+        f"{recipe}\n\n"
+        "=== CRITIC VERDICTS (P0/P1 = must fix; also address P2 where easy) ===\n"
+        f"{verdicts}\n\n"
+        "RULES:\n"
+        "- PRESERVE all existing code. Do NOT delete or rewrite unrelated code.\n"
+        "- Work on the existing branch; amend/extend the PR (new commits).\n"
+        "- Run the verification steps after fixing; ensure all tests pass.\n"
+        "- Report what you fixed."
+    )
+    fix_path = sandbox.sandboxed_write(scratch_dir, repo_path, "fix_round.md", fix_prompt)
+    sink(task_id, "fix_round_started", {"round_path": str(fix_path)})
+    cmd = _builder_cmd(str(fix_path), repo_path)
+    code, output = _run(cmd, repo_path, BUILD_TIMEOUT_S)
+    sink(task_id, "fix_round_done", {"exit_code": code, "output": output[-2000:]})
+    return {"exit_code": code, "output": output}
