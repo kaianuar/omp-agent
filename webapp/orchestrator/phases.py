@@ -74,12 +74,24 @@ def run_recipe(
     sink: EventSink,
 ) -> str:
     """RECIPE — convert approved design into builder-ready recipe.md."""
-    system, user = prompts.recipe_prompt(brief, design_doc, intent)
+    # Recipe generation is output-heavy; the recipe prompt already carries
+    # architecture context + the design doc. Injecting the full L0-L3 brief
+    # (34KB) makes MiMo return empty content — skip it entirely.
+    system, user = prompts.recipe_prompt("", design_doc, intent)
     recipe = llm.chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.2,
         max_tokens=6000,
+        model=llm.RECIPE_MODEL,
     )
     path = sandbox.sandboxed_write(scratch_dir, repo_path, "recipe.md", recipe)
     _emit(sink, task_id, "recipe_ready", {"path": str(path), "content": recipe})
     return str(path)
+
+
+def _trim_brief(brief: str, max_chars: int = 8000) -> str:
+    """Keep the head of the brief (charter + prefs), drop the deep backlog."""
+    if len(brief) <= max_chars:
+        return brief
+    # Keep the first (charter) and last (preferences) sections.
+    return brief[:max_chars] + "\n\n...[truncated for recipe generation]"

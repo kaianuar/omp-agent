@@ -15,6 +15,11 @@ import httpx
 DEFAULT_BASE = "https://api.commandcode.ai/provider/v1"
 DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro"
 
+# Long structured-output phases (recipe) use the plain V2.5 model:
+# MiMo Pro's reasoning consumes the output budget and 524s on big
+# generations; V2.5 generates long-form reliably.
+RECIPE_MODEL = "xiaomi/mimo-v2.5"
+
 
 def _config() -> tuple[str, str, str]:
     base = os.environ.get("OMP_LLM_BASE_URL", DEFAULT_BASE).rstrip("/")
@@ -30,22 +35,42 @@ def chat(
     *,
     temperature: float = 0.4,
     max_tokens: int = 4000,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
+    retries: int = 2,
+    model: str | None = None,
 ) -> str:
-    """One chat completion. Returns the assistant text (or raises)."""
-    base, key, model = _config()
+    """One chat completion with retry on transient 5xx/524. Returns text."""
+    base, key, default_model = _config()
     body = {
-        "model": model,
+        "model": model or default_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(
-            f"{base}/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json=body,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.post(
+                    f"{base}/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json=body,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            last_err = e
+            if e.response.status_code in (524, 502, 503, 429):
+                import time
+
+                time.sleep(2 * (attempt + 1))  # backoff
+                continue
+            raise
+        except httpx.TimeoutException as e:
+            last_err = e
+            import time
+
+            time.sleep(2 * (attempt + 1))
+            continue
+    raise RuntimeError(f"LLM call failed after {retries + 1} attempts: {last_err}")
