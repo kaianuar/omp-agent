@@ -98,16 +98,23 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       const projects = await api.listProjects();
-      setProjects(projects);
-      if (projects.length === 0) {
+      // Dedupe by repo_path (a repo bound twice is the same project).
+      const seen = new Set<string>();
+      const unique = projects.filter((p) => {
+        if (seen.has(p.repo_path)) return false;
+        seen.add(p.repo_path);
+        return true;
+      });
+      setProjects(unique);
+      if (unique.length === 0) {
         const p = await api.createProject('diskscope', '/home/kaianuar/code/diskscope', '/tmp/omp-web-scratch');
         setProjects([p]);
         setProject(p);
         const s = await api.startSession(p.id);
         setSession(s);
       } else {
-        setProject(projects[0]);
-        const s = await api.startSession(projects[0].id);
+        setProject(unique[0]);
+        const s = await api.startSession(unique[0].id);
         setSession(s);
       }
     })();
@@ -200,7 +207,7 @@ export default function App() {
             onChange={(e) => void switchProject(Number(e.target.value))}
           >
             {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>{p.name} — {p.repo_path}</option>
             ))}
           </select>
           <div className="tiny muted" title={project?.repo_path ?? ''}>
