@@ -1,37 +1,67 @@
 # omp-agent
 
-A fully-automated, omp-native engineering pipeline: give it a goal and it drives to
-completion through a hard **test gate**, an **adversarial review**, a
-**visual + functional e2e gate** (Playwright + a vision model sees the UI it builds),
-and a human **steer checkpoint**. Plus a **factory** (`scaffold.sh`) to replicate the
-setup into any new project.
+A **local-first AI software studio**: open any existing codebase, talk to an
+orchestrator in a chat UI, and it designs, builds, reviews, and fixes features
+for you — with you approving at every checkpoint.
 
-Everything runs through **Oh My Pi** (`omp`) as the agent, with a thin
-`pipeline.sh` orchestrator that drives a **plan-only phase** then a **phased build**
-(each phase: implement → test gate → adversarial review → commit → next), so a
-large project is reviewed in small, bounded slices instead of one giant wall.
-Build quality is enforced by real tests; the adversarial review uses the same
-model as the builder (Xiaomi MiMo) with strict severity discipline to ensure
-genuine independence through prompt-enforced rules.
+```
+Web UI (chat + cards + approve/reject)
+   ↓  one websocket (JSON-RPC + live events)
+Orchestrator (read-only brain: research, design, recipe, verify)
+   ↓  dispatches recipes
+Pipeline (omp builder → critic review → auto-fix → verify → PR)
+```
 
-The pipeline is **model-agnostic** — you bring your own models/providers, or use the
-recommended defaults.
+- **Open any existing folder** (browse dialog or path) — it learns the repo
+  from its AGENTS.md / README / backlogs.
+- **Conversational**: tell it what you want ("add a junk detector", "the dupes
+  panel feels cluttered"), answer its clarifying questions, approve the design.
+- **Review-gated**: a critic reviews every PR (P0-P4), and the builder
+  auto-fixes blockers before it comes back to you.
+- **Live**: everything streams over one WebSocket — no polling, no page reloads.
+- **Local-first**: runs on your machine, your models, your code. The
+  orchestrator can never write to your project — only to scratch (/tmp).
 
-🌍 **See it in action:** apps built with omp-agent → **[PROJECTS.md](PROJECTS.md)**.
+> The engine underneath is a fully-automated, omp-native engineering pipeline
+> (test gate → adversarial review → e2e gate → steer checkpoint). See
+> [PIPELINE.md](PIPELINE.md) for the engine; this README leads with the product.
 
----
-
-## Quick start (you have models configured)
+## Quick start (web UI)
 
 ```bash
 # 1. Clone
 git clone https://github.com/kaianuar/omp-agent
 cd omp-agent
 
-# 2. Scaffold a new project from the factory
+# 2. Backend (Python)
+python3 -m venv .venv-web
+.venv-web/bin/pip install -r webapp/requirements.txt
+
+# 3. Frontend (React + Vite)
+cd webapp/web && bun install && cd ../..
+
+# 4. Run it (backend :8787, frontend :5273)
+export OMP_LLM_API_KEY=...            # any OpenAI-compatible key
+.venv-web/bin/uvicorn webapp.api.main:app --port 8787 &   # backend
+cd webapp/web && bunx vite --port 5273 &                  # frontend
+
+# 5. Open http://127.0.0.1:5273 — add a project (browse to a repo), start chatting.
+```
+
+That's it. Point it at a repo, ask for a feature, approve the design, watch it
+build + review live.
+
+---
+
+## The engine: pipeline quick start (you have models configured)
+
+For pipeline-first users (no web UI — drive omp directly):
+
+```bash
+# Scaffold a new project from the factory
 ./scaffold.sh ~/code/my-app --ui        # --ui also copies the UI design tokens
 
-# 3. Edit the goal, then let omp run the loop (see PIPELINE.md)
+# Edit the goal, then let omp run the loop (see PIPELINE.md)
 cd ~/code/my-app
 #   - edit requirements.md  (what to build)
 omp
