@@ -67,6 +67,74 @@ function DesignCard({ ev, onDecide }: { ev: Event; onDecide: (d: string, note?: 
   );
 }
 
+/** PR card — link + collapsible diff. */
+function PrCard({ ev }: { ev: Event }) {
+  const [showDiff, setShowDiff] = useState(false);
+  const p = ev.payload;
+  return (
+    <div className="card" data-testid="card-pr">
+      <b>PR open:</b>{' '}
+      <a href={String(p.url)} target="_blank" rel="noreferrer">{String(p.url)}</a>
+      {p.diff ? (
+        <>
+          {' '}
+          <button className="link-btn" onClick={() => setShowDiff((s) => !s)}>
+            {showDiff ? 'hide diff' : 'show diff'}
+          </button>
+          {showDiff && <pre className="doc diff">{String(p.diff)}</pre>}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Critic verdict card — PASS/FAIL + parsed P0-P4 findings. */
+function CriticCard({ ev }: { ev: Event }) {
+  const [showRaw, setShowRaw] = useState(false);
+  const p = ev.payload;
+  const text = String(p.text ?? '');
+  // Parse P0-P4 findings into a list (lines starting with P0/P1/P2/P3/P4).
+  const findings = text.split('\n').filter((l) => /^\s*(P[0-4][:\s])/.test(l));
+  return (
+    <div className="card" data-testid="card-critic">
+      <b>Critic review:</b>{' '}
+      {p.passed ? <span className="ok">PASS</span> : <span className="fail">FAIL</span>}
+      {findings.length > 0 && (
+        <ul className="critic-findings">
+          {findings.map((f, i) => {
+            const severity = (f.match(/P([0-4])/) || [])[1] || '?';
+            const cls = ['card-fail', 'card-warn', 'card-dim'][Number(severity)] || 'card-dim';
+            return <li key={i} className={cls}>{f.trim()}</li>;
+          })}
+        </ul>
+      )}
+      <button className="link-btn" onClick={() => setShowRaw((s) => !s)}>
+        {showRaw ? 'hide raw' : 'show raw'}
+      </button>
+      {showRaw && <pre className="doc">{text.slice(0, 2000)}</pre>}
+    </div>
+  );
+}
+
+/** Verify result card — checklist of steps. */
+function VerifyCard({ ev }: { ev: Event }) {
+  const p = ev.payload;
+  const results = Array.isArray(p.results) ? p.results : [];
+  const passed = results.filter((r: any) => r.exit_code === 0).length;
+  return (
+    <div className="card" data-testid="card-verify">
+      <b>Verification</b> — {passed}/{results.length} steps passed
+      <ul className="verify-list">
+        {results.map((r: any, i: number) => (
+          <li key={i} className={r.exit_code === 0 ? 'ok' : 'fail'}>
+            {r.exit_code === 0 ? '✓' : '✗'} <code>{String(r.cmd ?? '')}</code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The three roles a user must assign models to. */
 const ROLES = ['orchestrator', 'builder', 'critic'] as const;
 
@@ -175,14 +243,9 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClar
         <span className="muted">▸</span> <code>{String(p.line ?? '')}</code>
       </div>;
     case 'pr_ready':
-      return <div className="card" key={ev.id} data-testid="card-pr">
-        <b>PR open:</b> <a href={String(p.url)} target="_blank" rel="noreferrer">{String(p.url)}</a>
-      </div>;
+      return <PrCard key={ev.id} ev={ev} />;
     case 'critic_verdict':
-      return <div className="card" key={ev.id} data-testid="card-critic">
-        <b>Critic review:</b> {p.passed ? <span className="ok">PASS</span> : <span className="fail">FAIL</span>}
-        <pre className="doc">{String(p.text ?? '').slice(0, 2000)}</pre>
-      </div>;
+      return <CriticCard key={ev.id} ev={ev} />;
     case 'critic_passed':
       return <div className="card card-ok" key={ev.id} data-testid="card-critic-pass">
         <b>Critic passed</b> (round {String(p.round)}) — moving to verify.
@@ -192,10 +255,7 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClar
         <b>Fix round {String(p.round)}</b> — re-dispatching builder with critic verdicts.
       </div>;
     case 'verify_result':
-      return <div className="card" key={ev.id} data-testid="card-verify">
-        <b>Verification</b>
-        <pre className="doc">{JSON.stringify(p.results, null, 2).slice(0, 1500)}</pre>
-      </div>;
+      return <VerifyCard key={ev.id} ev={ev} />;
     case 'fix_exhausted':
       return <div className="card card-warn" key={ev.id} data-testid="card-exhausted">
         <b>Fix rounds exhausted — needs your decision.</b>

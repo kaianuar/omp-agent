@@ -124,7 +124,7 @@ class TaskRunner:
             if not pr_url:
                 self._sink(self.task_id, "no_pr", {"note": "no open PR found for review"})
                 break
-            self._sink(self.task_id, "pr_ready", {"url": pr_url})
+            self._sink(self.task_id, "pr_ready", {"url": pr_url, "diff": diff[-4000:]})
             db.update_task_state(self.task_id, "reviewing", pr_url=pr_url)
             verdict = phases.run_review(self.task_id, pr_url, diff, self._sink)
             if verdict["passed"]:

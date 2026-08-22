@@ -291,6 +291,12 @@ body {
 .card-progress { padding: 6px 12px; font-size: 12px; font-family: ui-monospace, monospace; }
 .card-progress code { color: var(--text); }
 .card ul { margin: 6px 0 0 18px; }
+.critic-findings { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.critic-findings li { padding: 4px 8px; border-radius: 4px; font-size: 12px; background: var(--surface2); }
+.verify-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.verify-list li { font-size: 12px; }
+.verify-list code { font-size: 11px; }
+.diff { color: var(--text); font-size: 11px; max-height: 200px; overflow-y: auto; }
 
 .doc {
   background: var(--doc-bg, #0b1220);
