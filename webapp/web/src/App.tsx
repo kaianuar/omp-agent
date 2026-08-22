@@ -106,6 +106,7 @@ export default function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [session, setSession] = useState<Session | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [task, setTask] = useState<Task | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [input, setInput] = useState('');
@@ -155,31 +156,57 @@ export default function App() {
       if (unique.length === 0) {
         const p = await api.createProject('diskscope', '/home/kaianuar/code/diskscope', '/tmp/omp-web-scratch');
         setProjects([p]);
-        setProject(p);
-        const s = await api.startSession(p.id);
-        setSession(s);
+        await selectProject(p);
       } else {
-        setProject(unique[0]);
-        const s = await api.startSession(unique[0].id);
-        setSession(s);
+        await selectProject(unique[0]);
       }
     })();
   }, []);
 
-  // Switch project → new session, reset task state.
+  // Switch project → load its sessions, select the most recent.
   const switchProject = async (pid: number) => {
     const p = projects.find((x) => x.id === pid);
     if (!p) return;
     await selectProject(p);
   };
 
-  // Select a project directly (no lookup needed).
+  // Select a project: load its sessions, pick the newest (or create one).
   const selectProject = async (p: Project) => {
     setProject(p);
     setTask(null);
     setEvents([]);
-    const s = await api.startSession(p.id);
+    setSessions([]);
+    const sessions = await api.listSessions(p.id);
+    setSessions(sessions);
+    if (sessions.length > 0) {
+      await selectSession(sessions[0]);
+    } else {
+      const s = await api.startSession(p.id);
+      setSessions([s]);
+      await selectSession(s);
+    }
+  };
+
+  // Select a session: load its tasks + the latest task's events.
+  const selectSession = async (s: Session) => {
     setSession(s);
+    setTask(null);
+    setEvents([]);
+    const tasks = await api.sessionTasks(s.id);
+    const latest = tasks[tasks.length - 1];
+    if (latest) {
+      setTask(latest);
+      const evs = await api.taskEvents(latest.id);
+      setEvents(evs);
+    }
+  };
+
+  // New session for the current project (fresh conversation).
+  const newSession = async () => {
+    if (!project) return;
+    const s = await api.startSession(project.id);
+    setSessions((prev) => [s, ...prev]);
+    await selectSession(s);
   };
 
   const createProject = async () => {
@@ -314,6 +341,24 @@ export default function App() {
               </div>
             </div>
           )}
+        </div>
+        <div className="rail-section">
+          <b>Session</b>
+          <select
+            data-testid="session-select"
+            value={session?.id ?? ''}
+            onChange={(e) => {
+              const s = sessions.find((x) => x.id === Number(e.target.value));
+              if (s) void selectSession(s);
+            }}
+          >
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>session #{s.id}</option>
+            ))}
+          </select>
+          <button className="link-btn" data-testid="new-session-btn" onClick={() => void newSession()}>
+            + New session
+          </button>
         </div>
         <div className="rail-section">
           <b>Task</b>

@@ -61,6 +61,12 @@ export const api = {
   startSession: (projectId: number) =>
     req<Session>(`/api/projects/${projectId}/sessions`, { method: 'POST' }),
 
+  listSessions: (projectId: number) =>
+    req<Session[]>(`/api/projects/${projectId}/sessions`),
+
+  sessionTasks: (sessionId: number) =>
+    req<Task[]>(`/api/sessions/${sessionId}/tasks`),
+
   newTask: (sessionId: number, message: string) =>
     req<Task>(`/api/sessions/${sessionId}/tasks`, {
       method: 'POST',

@@ -108,6 +108,16 @@ def create_session(project_id: int) -> int:
         return _lastrowid(cur)
 
 
+def list_sessions(project_id: int) -> list[dict[str, Any]]:
+    """All sessions for a project, newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE project_id = ? ORDER BY id DESC",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_session(session_id: int) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()

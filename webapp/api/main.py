@@ -80,6 +80,16 @@ def start_session(pid: int) -> dict:
     return db.get_session(sid) or {"error": "create failed"}
 
 
+@app.get("/api/projects/{pid}/sessions")
+def project_sessions(pid: int) -> list[dict]:
+    return db.list_sessions(pid)
+
+
+@app.get("/api/sessions/{sid}/tasks")
+def session_tasks(sid: int) -> list[dict]:
+    return db.list_tasks_by_session(sid)
+
+
 @app.post("/api/sessions/{sid}/tasks")
 def new_task(sid: int, body: TaskIn) -> dict:
     """Create a task and start the intake phase (blocking up to LLM call)."""
