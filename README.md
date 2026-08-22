@@ -295,29 +295,22 @@ or `CRITIC_MODEL` env var for the critic. See
 
 ## The model roles (what to configure)
 
-The pipeline needs **two core models**:
+The pipeline uses models in a few distinct roles:
 
 1. **builder** — implements code + tests. Pick your fastest strong coder.
-2. **critic** (Gate 2) — adversarially reviews the builder's diff. Uses the same
-   model as the builder by default (Xiaomi MiMo), with strict severity discipline
-   enforced through prompt rules (P0–P4 taxonomy, actionable `-> FIX:` lines,
-   respect-own-FIX contract).
+2. **critic** (Gate 2) — adversarially reviews the builder's diff, with strict
+   severity discipline enforced through prompt rules (P0–P4 taxonomy,
+   actionable `-> FIX:` lines, respect-own-FIX contract).
+3. **vision** (Gate 3, optional) — checks screenshots of the running UI. A
+   multimodal model works; it's used by `tests/visual_gate.sh`, not by the
+   builder/critic roles.
 
-There's also an optional **vision reviewer** for Gate 3: it checks screenshots of the
-running UI. A multimodal model works (e.g. `mimo-v2.5`); it's used by
-`tests/visual_gate.sh`, not by the builder/critic roles.
-
-### Recommended default
-
-| Role | Model | Provider |
-|---|---|---|
-| builder | mimo-v2.5-pro | Xiaomi MiMo |
-| plan | mimo-v2.5 | Xiaomi MiMo |
-| critic | mimo-v2.5-pro | Xiaomi MiMo |
-| vision | mimo-v2.5 | Xiaomi MiMo |
-
-These are the repo author's defaults. Swap them for whatever you actually use
-(see below).
+There are no baked-in defaults — which model plays each role is **100%
+dependent on what you have configured locally**. In the web UI, the first-run
+**setup wizard** (and the ⚙️ settings gear after that) is where you assign a
+model to each role; it lists every model from every provider omp is configured
+with. For pipeline-only use, set them via `.omp/config.yml` (builder/plan) and
+the `PIPELINE_CRITIC_MODEL` / `CRITIC_MODEL` env var (critic).
 
 ---
 
@@ -337,7 +330,7 @@ Providers and API keys live in your **omp environment** (not in this repo):
 
 ### 2. Pick model ids that exist in your setup
 
-Each model is addressed as `<provider>/<model>` (e.g. `xiaomi-token-plan-sgp/mimo-v2.5-pro`).
+Each model is addressed as `<provider>/<model>` (e.g. `commandcode/xiaomi/mimo-v2.5-pro`).
 To know what you have, list models from your providers, or run omp and pick from its model menu.
 
 ### 3. Point the pipeline at them
