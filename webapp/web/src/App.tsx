@@ -114,7 +114,31 @@ export default function App() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjName, setNewProjName] = useState('');
   const [newProjPath, setNewProjPath] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Connect to the session's WS for live events (replaces polling).
+  useEffect(() => {
+    if (!session) return;
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws/sessions/${session.id}`);
+    wsRef.current = ws;
+    ws.onmessage = (msg) => {
+      try {
+        const ev = JSON.parse(msg.data as string) as Event;
+        setEvents((prev) => {
+          // Dedupe by id (replay may overlap with already-received events).
+          if (prev.some((e) => e.id === ev.id)) return prev;
+          return [...prev, ev];
+        });
+      } catch { /* non-JSON message, ignore */ }
+    };
+    ws.onclose = () => {
+      wsRef.current = null;
+      // Fall back to polling so the UI still updates if the socket drops.
+    };
+    return () => ws.close();
+  }, [session?.id]);
 
   // Load all projects; auto-select the first (or create a default).
   useEffect(() => {
@@ -217,13 +241,16 @@ export default function App() {
     }
   };
 
-  /** Poll events + task state until a checkpoint state (user must act again). */
+  /** Wait until the task reaches a checkpoint state (events arrive via WS). */
   const pollUntilCheckpoint = async (taskId: number) => {
-    const terminal = new Set(['awaiting_result', 'awaiting_fix_decision', 'error']);
+    // Any state where the user must act again (or the task ended).
+    const terminal = new Set([
+      'awaiting_design_approval', 'awaiting_recipe_approval',
+      'awaiting_result', 'awaiting_fix_decision', 'error',
+    ]);
     for (let i = 0; i < 200; i++) {  // ~33 min cap at 10s intervals
       await new Promise((r) => setTimeout(r, 10_000));
-      const [evs, t] = await Promise.all([api.taskEvents(taskId), api.getTask(taskId)]);
-      setEvents(evs);
+      const t = await api.getTask(taskId);
       setTask(t);
       if (terminal.has(t.state)) break;
     }
