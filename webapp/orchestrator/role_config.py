@@ -64,6 +64,16 @@ def _read_yml(path: Path) -> dict[str, Any] | None:
             continue
         if current_provider is None:
             continue
+        # provider-level scalar keys (baseUrl, apiKey): 4-space indent, no dash.
+        # Skip 'models:' (the list header — the models list is built below).
+        if (
+            line.startswith("    ") and not line.startswith("      ")
+            and ":" in line and not line.lstrip().startswith("-")
+            and not line.strip().startswith("models:")
+        ):
+            k, _, v = line.strip().partition(":")
+            result["providers"][current_provider][k.strip()] = v.strip()
+            continue
         # model entry: 4-space indent + "- id:"
         if line.startswith("    - id:"):
             mid = line.split(":", 1)[1].strip()
@@ -98,35 +108,65 @@ def list_models() -> list[dict[str, str]]:
 
 
 def _list_models_api() -> list[dict[str, str]]:
-    """Fetch the provider's model list via the OpenAI-compatible /models."""
+    """Fetch model lists from EVERY provider omp is configured with.
+
+    omp's models.yml can declare multiple providers, each with its own
+    baseUrl + apiKey (all OpenAI-compatible). We hit GET /models on each
+    and merge. Falls back to the OMP_LLM_* env vars, then CommandCode.
+    """
     import httpx
 
-    base = os.environ.get("OMP_LLM_BASE_URL", "https://api.commandcode.ai/provider/v1").rstrip("/")
-    key = os.environ.get("OMP_LLM_API_KEY", os.environ.get("COMMANDCODE_API_KEY", ""))
-    if not key:
+    providers = _read_providers_yml()
+    if not providers:
+        # Env/CommandCode fallback (single provider).
+        base = os.environ.get("OMP_LLM_BASE_URL", "https://api.commandcode.ai/provider/v1").rstrip("/")
+        key = os.environ.get("OMP_LLM_API_KEY", os.environ.get("COMMANDCODE_API_KEY", ""))
+        if key:
+            providers = [{"name": "commandcode", "baseUrl": base, "apiKey": key}]
+
+    out: list[dict[str, str]] = []
+    for prov in providers:
+        base = (prov.get("baseUrl") or "").rstrip("/")
+        key = prov.get("apiKey") or ""
+        if not base or not key:
+            continue
+        try:
+            with httpx.Client(timeout=10) as client:
+                resp = client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
+                resp.raise_for_status()
+                data = resp.json()
+            models = data.get("data", data) if isinstance(data, dict) else data
+            for m in models or []:
+                mid = m.get("id") or m.get("name")
+                if mid:
+                    out.append({"id": mid, "name": m.get("name") or mid})
+        except Exception:  # noqa: BLE001 — skip a broken provider, keep the rest
+            continue
+    # Dedupe by id (a model may appear on multiple providers).
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for m in out:
+        if m["id"] in seen:
+            continue
+        seen.add(m["id"])
+        unique.append(m)
+    return unique
+
+
+def _read_providers_yml() -> list[dict[str, str]]:
+    """Parse models.yml into [{name, baseUrl, apiKey}], one per provider."""
+    yml = _read_yml(OMP_MODELS_YML)
+    if not yml:
         return []
-    try:
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
-            resp.raise_for_status()
-            data = resp.json()
-        models = data.get("data", data) if isinstance(data, dict) else data
-        out: list[dict[str, str]] = []
-        for m in models or []:
-            mid = m.get("id") or m.get("name")
-            if mid:
-                out.append({"id": mid, "name": m.get("name") or mid})
-        # Dedupe by id (API may repeat).
-        seen: set[str] = set()
-        unique: list[dict[str, str]] = []
-        for m in out:
-            if m["id"] in seen:
-                continue
-            seen.add(m["id"])
-            unique.append(m)
-        return unique
-    except Exception:  # noqa: BLE001 — fall back to models.yml
-        return []
+    providers: list[dict[str, str]] = []
+    for name, conf in yml.get("providers", {}).items():
+        entry = {"name": name}
+        if conf.get("baseUrl"):
+            entry["baseUrl"] = conf["baseUrl"]
+        if conf.get("apiKey"):
+            entry["apiKey"] = conf["apiKey"]
+        providers.append(entry)
+    return providers
 
 
 def get_roles() -> dict[str, Any]:
