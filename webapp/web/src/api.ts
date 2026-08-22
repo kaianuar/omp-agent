@@ -81,6 +81,8 @@ export const api = {
 
   taskEvents: (taskId: number) => req<Event[]>(`/api/tasks/${taskId}/events`),
 
+  getTask: (taskId: number) => req<Task>(`/api/tasks/${taskId}`),
+
   taskArtifacts: (taskId: number) =>
     req<{ design_path: string | null; recipe_path: string | null }>(
       `/api/tasks/${taskId}/artifacts`

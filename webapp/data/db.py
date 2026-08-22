@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "omp_web.db"
 
@@ -148,6 +153,43 @@ def add_event(task_id: int, kind: str, payload: dict[str, Any]) -> None:
             "INSERT INTO events (task_id, kind, payload) VALUES (?, ?, ?)",
             (task_id, kind, json.dumps(payload)),
         )
+        # Resolve the event's session for the WS push (best-effort).
+        row = conn.execute(
+            "SELECT session_id FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        sid = row["session_id"] if row else None
+    if sid is not None:
+        _publish_ws(sid, {
+            "id": _last_event_id(task_id),
+            "task_id": task_id,
+            "kind": kind,
+            "payload": payload,
+            "ts": _timestamp(),
+        })
+
+
+def _last_event_id(task_id: int) -> int:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM events WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        return row["id"] if row else 0
+
+
+def _publish_ws(sid: int, event: dict[str, Any]) -> None:
+    """Push an event to the session's websocket clients (async fire-and-forget)."""
+    try:
+        from webapp.api import events as ws_events
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(ws_events.publish(sid, event))
+        else:
+            asyncio.run(ws_events.publish(sid, event))
+    except Exception:  # noqa: BLE001 — ws push must never break event persistence
+        pass
 
 
 def list_events(task_id: int) -> list[dict[str, Any]]:

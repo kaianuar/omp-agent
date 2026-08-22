@@ -71,6 +71,21 @@ body {
   width: 100%;
 }
 
+/* Clarify answer box */
+.clarify-box { margin-top: 10px; }
+.clarify-box textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.clarify-box textarea:focus { outline: none; border-color: var(--primary); }
+
 /* Chat */
 .chat { flex: 1; display: flex; flex-direction: column; }
 .chat-header {

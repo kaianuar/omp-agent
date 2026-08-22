@@ -7,7 +7,28 @@ import './styles.css';
 
 // ── Event → card rendering ────────────────────────────────────────────
 
-function cardFor(ev: Event, onDecide: (d: string, note?: string) => void) {
+/** Inline answer box for the clarify card. */
+function ClarifyBox({ taskId, onClarify }: { taskId: number; onClarify: (taskId: number, answers: string) => void }) {
+  const [answers, setAnswers] = useState('');
+  return (
+    <div className="clarify-box">
+      <textarea
+        data-testid="clarify-input"
+        placeholder="Answer each question (e.g. 1. older than 180 days, 2. as a new tab, 3. reveal and delete)"
+        value={answers}
+        onChange={(e) => setAnswers(e.target.value)}
+        rows={2}
+      />
+      <div className="actions">
+        <button data-testid="clarify-submit" onClick={() => onClarify(taskId, answers)} disabled={!answers.trim()}>
+          Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClarify: (taskId: number, answers: string) => void) {
   const p = ev.payload;
   switch (ev.kind) {
     case 'intake':
@@ -18,6 +39,7 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void) {
       return <div className="card card-question" key={ev.id} data-testid="card-clarify">
         <b>A few questions:</b>
         <ul>{(p.questions as string[] ?? []).map((q, i) => <li key={i}>{q}</li>)}</ul>
+        <ClarifyBox taskId={ev.task_id} onClarify={onClarify} />
       </div>;
     case 'design_ready':
       return <div className="card card-design" key={ev.id} data-testid="card-design">
@@ -178,13 +200,41 @@ export default function App() {
     }
   };
 
+  const clarifyTask = async (taskId: number, answers: string) => {
+    if (!answers.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api.clarify(taskId, answers);
+      // After answering, proceed like decide: poll until next checkpoint.
+      await pollUntilCheckpoint(taskId);
+    } catch (e) {
+      setEvents((prev) => [...prev, {
+        id: Date.now(), task_id: taskId, kind: 'error', ts: new Date().toISOString(),
+        payload: { note: String(e) },
+      } as Event]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Poll events + task state until a checkpoint state (user must act again). */
+  const pollUntilCheckpoint = async (taskId: number) => {
+    const terminal = new Set(['awaiting_result', 'awaiting_fix_decision', 'error']);
+    for (let i = 0; i < 200; i++) {  // ~33 min cap at 10s intervals
+      await new Promise((r) => setTimeout(r, 10_000));
+      const [evs, t] = await Promise.all([api.taskEvents(taskId), api.getTask(taskId)]);
+      setEvents(evs);
+      setTask(t);
+      if (terminal.has(t.state)) break;
+    }
+  };
+
   const decide = async (decision: string, note = '') => {
     if (!task) return;
     setBusy(true);
     try {
       await api.decide(task.id, decision, note);
-      const evs = await api.taskEvents(task.id);
-      setEvents(evs);
+      await pollUntilCheckpoint(task.id);
     } catch (e) {
       setEvents((prev) => [...prev, {
         id: Date.now(), task_id: task.id, kind: 'error', ts: new Date().toISOString(),
@@ -262,7 +312,7 @@ export default function App() {
               Tell me what you want built or improved. I'll design it, get your approval, and run the build + review pipeline.
             </div>
           )}
-          {events.map((ev) => cardFor(ev, decide))}
+          {events.map((ev) => cardFor(ev, decide, clarifyTask))}
           {busy && <div className="card card-build"><b>Working…</b></div>}
           <div ref={bottomRef} />
         </div>
