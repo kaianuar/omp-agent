@@ -29,6 +29,7 @@ def run_intake(
     raw = llm.chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.2,
+        role="orchestrator",
     )
     try:
         intent = json.loads(raw)
@@ -58,6 +59,7 @@ def run_design(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.4,
         max_tokens=4000,
+        role="orchestrator",
     )
     path = sandbox.sandboxed_write(scratch_dir, repo_path, "design.md", design)
     _emit(sink, task_id, "design_ready", {"path": str(path), "content": design})
@@ -82,6 +84,7 @@ def run_recipe(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.2,
         max_tokens=6000,
+        role="orchestrator",
         model=llm.RECIPE_MODEL,
     )
     path = sandbox.sandboxed_write(scratch_dir, repo_path, "recipe.md", recipe)
@@ -114,6 +117,7 @@ def run_review(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=0.1,
         max_tokens=3000,
+        role="critic",
         model=model or llm.CRITIC_MODEL,
     )
     passed = "VERDICT: PASS" in verdict_text.upper()

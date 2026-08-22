@@ -28,6 +28,41 @@ function ClarifyBox({ taskId, onClarify }: { taskId: number; onClarify: (taskId:
   );
 }
 
+/** Role → model picker (shared by the setup wizard + settings panel). */
+function RolePicker({
+  roles, defaults, models, onChange,
+}: {
+  roles: Record<string, string>;
+  defaults: Record<string, string>;
+  models: { id: string; name: string }[];
+  onChange: (roles: Record<string, string>) => void;
+}) {
+  const ROLE_LABELS: Record<string, string> = {
+    orchestrator: 'Orchestrator (brain: intake/design/recipe)',
+    builder: 'Builder (writes code)',
+    critic: 'Critic (adversarial review)',
+  };
+  const set = (role: string, id: string) => onChange({ ...roles, [role]: id });
+  return (
+    <div className="role-picker" data-testid="role-picker">
+      {Object.keys(ROLE_LABELS).map((role) => (
+        <div className="role-row" key={role}>
+          <label>{ROLE_LABELS[role]}</label>
+          <select
+            data-testid={`role-${role}`}
+            value={roles[role] ?? defaults[role] ?? ''}
+            onChange={(e) => set(role, e.target.value)}
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClarify: (taskId: number, answers: string) => void) {
   const p = ev.payload;
   switch (ev.kind) {
@@ -121,6 +156,13 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (localStorage.getItem('omp-theme') as 'dark' | 'light') || 'dark'
   );
+  const [rolesConfig, setRolesConfig] = useState<{
+    configured: boolean;
+    roles: Record<string, string>;
+    defaults: Record<string, string>;
+  } | null>(null);
+  const [models, setModels] = useState<{ id: string; name: string }[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Apply + persist the theme.
@@ -130,6 +172,24 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+
+  // Load role config + model list on startup.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [rc, ml] = await Promise.all([api.getRoles(), api.listModels()]);
+        setRolesConfig(rc);
+        setModels(ml.models);
+      } catch { /* non-fatal; wizard can't show but app still works */ }
+    })();
+  }, []);
+
+  // Save role assignments (from wizard or settings) and mark configured.
+  const saveRoles = async (roles: Record<string, string>) => {
+    const rc = await api.setRoles(roles);
+    setRolesConfig(rc);
+    setShowSettings(false);
+  };
 
   // Subscribe to live events over the shared WS RPC socket.
   useEffect(() => {
@@ -333,12 +393,55 @@ export default function App() {
 
   return (
     <div className="app" data-testid="app">
+      {rolesConfig && !rolesConfig.configured && (
+        <div className="wizard-overlay" data-testid="setup-wizard">
+          <div className="wizard-card">
+            <h2>Set up your models</h2>
+            <p className="muted">Pick which model plays each role. These are the models omp has configured.</p>
+            <RolePicker
+              roles={rolesConfig.roles}
+              defaults={rolesConfig.defaults}
+              models={models}
+              onChange={(r) => setRolesConfig({ ...rolesConfig, roles: r })}
+            />
+            <div className="actions">
+              <button data-testid="wizard-save" onClick={() => void saveRoles(rolesConfig.roles)} disabled={models.length === 0}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettings && rolesConfig && (
+        <div className="wizard-overlay" data-testid="settings-panel">
+          <div className="wizard-card">
+            <h2>Settings — model roles</h2>
+            <RolePicker
+              roles={rolesConfig.roles}
+              defaults={rolesConfig.defaults}
+              models={models}
+              onChange={(r) => setRolesConfig({ ...rolesConfig, roles: r })}
+            />
+            <div className="actions">
+              <button data-testid="settings-save" onClick={() => void saveRoles(rolesConfig.roles)}>Save</button>
+              <button onClick={() => setShowSettings(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <aside className="rail" data-testid="rail">
         <div className="rail-header">
           <h2>omp</h2>
-          <button className="theme-toggle" data-testid="theme-toggle" onClick={toggleTheme} title="Toggle light/dark">
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
+          <div className="rail-actions">
+            {rolesConfig?.configured && (
+              <button className="icon-btn" data-testid="settings-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
+            )}
+            <button className="theme-toggle" data-testid="theme-toggle" onClick={toggleTheme} title="Toggle light/dark">
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+          </div>
         </div>
         <div className="rail-section">
           <b>Project</b>

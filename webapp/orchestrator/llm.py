@@ -34,6 +34,27 @@ def _config() -> tuple[str, str, str]:
     return base, key, model
 
 
+def _resolved_model(model: str | None, role: str | None) -> str:
+    """Model precedence: explicit arg > saved role config > env > default.
+
+    role is one of 'orchestrator' | 'builder' | 'critic' — the webapp's
+    setup wizard writes these to role_config; the phase that calls chat()
+    passes its role so the user's choice is honored.
+    """
+    if model:
+        return model
+    if role:
+        try:
+            from webapp.orchestrator import role_config
+
+            chosen = role_config.get_roles()["roles"].get(role)
+            if chosen:
+                return chosen
+        except Exception:  # noqa: BLE001 — role config must never break calls
+            pass
+    return os.environ.get("OMP_LLM_MODEL", DEFAULT_MODEL)
+
+
 def chat(
     messages: list[dict[str, str]],
     *,
@@ -42,11 +63,13 @@ def chat(
     timeout: float = 300.0,
     retries: int = 2,
     model: str | None = None,
+    role: str | None = None,
 ) -> str:
     """One chat completion with retry on transient 5xx/524. Returns text."""
     base, key, default_model = _config()
+    resolved = _resolved_model(model, role)
     body = {
-        "model": model or default_model,
+        "model": resolved,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,

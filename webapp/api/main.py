@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from webapp.data import db
 from webapp.api import events as ws_events_bus
 from webapp.orchestrator.machine import TaskRunner
+from webapp.orchestrator import role_config
 from webapp.pipeline import sandbox
 
 app = FastAPI(title="omp-agent web")
@@ -41,6 +42,15 @@ def _handle(method: str, params: dict) -> dict:
     """Dispatch an RPC method to the data/orchestrator layer."""
     if method == "health":
         return {"ok": True}
+
+    if method == "models.list":
+        return {"models": role_config.list_models()}
+
+    if method == "roles.get":
+        return role_config.get_roles()
+
+    if method == "roles.set":
+        return role_config.set_roles(params.get("roles", {}))
 
     if method == "projects.list":
         return db.list_projects()

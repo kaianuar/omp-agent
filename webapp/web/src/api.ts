@@ -121,6 +121,22 @@ export const api = {
 
   health: () => rpc.call<{ ok: boolean }>('health'),
 
+  listModels: () => rpc.call<{ models: { id: string; name: string }[] }>('models.list'),
+
+  getRoles: () =>
+    rpc.call<{
+      configured: boolean;
+      roles: Record<string, string>;
+      defaults: Record<string, string>;
+    }>('roles.get'),
+
+  setRoles: (roles: Record<string, string>) =>
+    rpc.call<{
+      configured: boolean;
+      roles: Record<string, string>;
+      defaults: Record<string, string>;
+    }>('roles.set', { roles }),
+
   listProjects: () => rpc.call<Project[]>('projects.list'),
 
   createProject: (name: string, repoPath: string, scratchPath: string) =>
