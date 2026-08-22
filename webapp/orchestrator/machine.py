@@ -72,16 +72,20 @@ class TaskRunner:
         db.update_task_state(self.task_id, "awaiting_design_approval", design_path=design_path)
 
     def design_decided(self, decision: str, note: str = "") -> None:
-        """CHECKPOINT 1 — approve → recipe; reject → design again."""
+        """CHECKPOINT 1 — approve → recipe; reject/adjust → design again.
+
+        Reject carries the user's feedback in `note`; it's merged into the
+        intent so the regenerated design addresses it (the adjust path).
+        """
         if decision == "approve":
             self._to_recipe()
         else:
             db.update_task_state(self.task_id, "design")
-            # Re-run design with the note as additional context (v1: simple).
             self._sink(self.task_id, "design_rejected", {"note": note})
-            # Re-dispatch design (would need intent — fetch from last event).
             intent = self._last_intent()
             if intent:
+                if note.strip():
+                    intent["feedback"] = note.strip()
                 self._to_design(intent)
 
     def _to_recipe(self) -> None:

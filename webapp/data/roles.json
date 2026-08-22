@@ -1,0 +1,5 @@
+{
+  "orchestrator": "xiaomi/mimo-v2.5",
+  "builder": "xiaomi/mimo-v2.5-pro",
+  "critic": "meta/muse-spark-1.2-contributor"
+}

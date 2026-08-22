@@ -28,6 +28,45 @@ function ClarifyBox({ taskId, onClarify }: { taskId: number; onClarify: (taskId:
   );
 }
 
+/** Design proposal card — Approve, or Reject with feedback (adjust path). */
+function DesignCard({ ev, onDecide }: { ev: Event; onDecide: (d: string, note?: string) => void }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const p = ev.payload;
+  return (
+    <div className="card card-design" data-testid="card-design">
+      <b>Design proposal</b>
+      <pre className="doc">{String(p.content ?? '').slice(0, 3000)}</pre>
+      {!rejecting ? (
+        <div className="actions">
+          <button data-testid="approve" onClick={() => onDecide('approve')}>Approve</button>
+          <button data-testid="reject" onClick={() => setRejecting(true)}>Adjust…</button>
+        </div>
+      ) : (
+        <div className="clarify-box">
+          <textarea
+            data-testid="design-feedback"
+            placeholder="What should change? e.g. use a sidebar instead of a tab, keep it read-only…"
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            rows={2}
+          />
+          <div className="actions">
+            <button
+              data-testid="reject-submit"
+              onClick={() => onDecide('reject', feedback)}
+              disabled={!feedback.trim()}
+            >
+              Regenerate design
+            </button>
+            <button onClick={() => setRejecting(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The three roles a user must assign models to. */
 const ROLES = ['orchestrator', 'builder', 'critic'] as const;
 
@@ -118,14 +157,7 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClar
         <ClarifyBox taskId={ev.task_id} onClarify={onClarify} />
       </div>;
     case 'design_ready':
-      return <div className="card card-design" key={ev.id} data-testid="card-design">
-        <b>Design proposal</b>
-        <pre className="doc">{String(p.content ?? '').slice(0, 3000)}</pre>
-        <div className="actions">
-          <button data-testid="approve" onClick={() => onDecide('approve')}>Approve</button>
-          <button data-testid="reject" onClick={() => onDecide('reject')}>Reject</button>
-        </div>
-      </div>;
+      return <DesignCard key={ev.id} ev={ev} onDecide={onDecide} />;
     case 'recipe_ready':
       return <div className="card" key={ev.id} data-testid="card-recipe">
         <b>Recipe ready</b>
