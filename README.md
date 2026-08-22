@@ -138,7 +138,7 @@ yourself end to end (scaffold, omp commands, steering, troubleshooting).
       │   ▼                                           │
       │  GATE 1 — HARD test gate (tests/gate.sh; red = halt)   │
       │   ▼                                           │
-      │  GATE 2 — ADVERSARIAL review: MiMo criticizes │
+      │  GATE 2 — ADVERSARIAL review: critic reviews │
       │           that phase's diff;                  │
       │           FAIL → feed findings back → retry   │── loop (bounded)
       │   ▼                                           │
@@ -146,7 +146,7 @@ yourself end to end (scaffold, omp commands, steering, troubleshooting).
       ▼
   C. GATE 3  — VISUAL + FUNCTIONAL E2E (if there's a UI): Playwright drives the
                 app through its real flows + captures screenshots, and a vision
-                model (mimo-v2.5) reviews the UI actually renders and looks
+                model (commandcode/xiaomi/mimo-v2.5) reviews the UI actually renders and looks
                 correct (tests/visual_gate.sh)
       │
       ▼
@@ -253,9 +253,8 @@ omp reads provider keys from your shell environment and its own secrets store.
 At minimum set the keys for the providers you'll use:
 
 ```bash
-export XIAOMI_API_KEY="..."                # builder + critic via Xiaomi MiMo
-export XIAOMI_BASE_URL="https://token-plan-sgp.xiaomimimo.com/v1"
-# ... any others you use (DEEPSEEK_API_KEY, OPENCODE_GO_API_KEY, ...)
+export COMMANDCODE_API_KEY="..."            # e.g. builder + critic via CommandCode
+# ... any others you use (OPENROUTER_API_KEY, DEEPSEEK_API_KEY, ...)
 ```
 
 If you use Hermes and keep keys in `~/.hermes/.env`, that file is loaded into the
@@ -268,8 +267,8 @@ Example:
 
 ```yaml
 modelRoles:
-  default: xiaomi-token-plan-sgp/mimo-v2.5-pro   # your builder model
-  plan: xiaomi-token-plan-sgp/mimo-v2.5
+  default: commandcode/xiaomi/mimo-v2.5-pro   # your builder model
+  plan: commandcode/xiaomi/mimo-v2.5
 ```
 
 You don't have to match this exactly — set the roles to models you have access to.
@@ -309,8 +308,8 @@ There are no baked-in defaults — which model plays each role is **100%
 dependent on what you have configured locally**. In the web UI, the first-run
 **setup wizard** (and the ⚙️ settings gear after that) is where you assign a
 model to each role; it lists every model from every provider omp is configured
-with. For pipeline-only use, set them via `.omp/config.yml` (builder/plan) and
-the `PIPELINE_CRITIC_MODEL` / `CRITIC_MODEL` env var (critic).
+with. Pipeline-only users set the same roles directly in omp's config — see
+[Configure your own models & providers](#configure-your-own-models--providers).
 
 ---
 
@@ -324,7 +323,7 @@ setup, then point the pipeline at them.
 
 Providers and API keys live in your **omp environment** (not in this repo):
 - omp reads API keys from your shell environment / omp's secrets store. Common vars:
-  `XIAOMI_API_KEY`, `OPENCODE_GO_API_KEY`, `DEEPSEEK_API_KEY`, etc.
+  `COMMANDCODE_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, etc.
 - Set any provider's credentials you plan to use. See omp's own docs for the exact
   key names and config file (`~/.omp/agent/config.yml`, `~/.config/oh-my-pi/models.yml`).
 
@@ -399,7 +398,7 @@ omp-agent/
 │   ├── review_gate.sh   # GATE 2 — adversarial review (P0–P4, issue ledger, -> FIX)
 │   ├── visual_gate.sh   # GATE 3 — Playwright functional e2e + vision screenshot review
 │   ├── gate0_plan_review.sh  # GATE 0 — plan review (before any code exists)
-│   ├── pipeline_self_test.sh # 19 self-tests for pipeline logic
+│   ├── pipeline_self_test.sh # 26 self-tests for pipeline logic
 │   ├── lib/
 │   │   └── review_ledger.py  # issue ledger logic (OPEN/RESOLVED/BACKLOG)
 │   └── e2e/             # Playwright spec templates + config for GATE 3
@@ -412,13 +411,13 @@ omp-agent/
 ## Setup / prerequisites
 
 - **Oh My Pi** (`omp`) installed and configured.
-- At least one provider key (e.g. `XIAOMI_API_KEY`) for the critic, plus a builder model.
+- At least one provider key (e.g. `COMMANDCODE_API_KEY`) for the critic, plus a builder model.
   See [Configure your own models & providers](#configure-your-own-models--providers).
 - **Docker** (optional but recommended) for projects needing native build dependencies
   (Tauri, GTK, etc.). The pipeline auto-detects the runtime and builds a container.
 - **GATE 3 (visual/e2e) needs a browser + a vision model.** `tests/visual_gate.sh`
   installs `@playwright/test` + Chromium on first run and uses a vision model
-  (`VISION_MODEL`, default `mimo-v2.5`) to review screenshots.
+  (`VISION_MODEL`, default `commandcode/xiaomi/mimo-v2.5`) to review screenshots.
   Only needed if the deliverable has a UI.
 
 ---
