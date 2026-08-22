@@ -166,6 +166,8 @@ export const api = {
 
   taskEvents: (taskId: number) => rpc.call<Event[]>('tasks.events', { task_id: taskId }),
 
+  cancelTask: (taskId: number) => rpc.call<{ cancelled: boolean }>('tasks.cancel', { task_id: taskId }),
+
   getTask: (taskId: number) => rpc.call<Task>('tasks.get', { task_id: taskId }),
 
   denyLog: () => rpc.call<{ entries: string[] }>('deny.log'),

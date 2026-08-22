@@ -334,6 +334,12 @@ export default function App() {
     setShowSettings(false);
   };
 
+  // Cancel the running build.
+  const cancelRun = async () => {
+    if (!task || !busy) return;
+    try { await api.cancelTask(task.id); } catch { /* ignore */ }
+  };
+
   // Subscribe to live events over the shared WS RPC socket.
   useEffect(() => {
     api.onEvent((ev) => {
@@ -726,6 +732,11 @@ export default function App() {
           <button data-testid="composer-send" onClick={() => void send()} disabled={busy || !input.trim()}>
             Send
           </button>
+          {busy && (
+            <button className="cancel-btn" data-testid="cancel-btn" onClick={() => void cancelRun()}>
+              Cancel
+            </button>
+          )}
         </footer>
       </main>
     </div>

@@ -117,6 +117,11 @@ class TaskRunner:
             self.task_id, self.repo_path, self.scratch_dir, recipe, self._sink
         )
         # Build failed (non-zero / timeout / missing) → surface an error.
+        # Cancel (130) is distinct — a user-initiated stop, not a failure.
+        if build.get("exit_code") == 130:
+            self._sink(self.task_id, "build_cancelled", {"note": "build cancelled by user"})
+            db.update_task_state(self.task_id, "cancelled")
+            return
         if build.get("exit_code", 0) != 0:
             self._sink(self.task_id, "error", {
                 "note": f"build failed (exit {build.get('exit_code')}): {build.get('output', '')[-400:]}",

@@ -22,7 +22,7 @@ from webapp.data import db
 from webapp.api import events as ws_events_bus
 from webapp.orchestrator.machine import TaskRunner
 from webapp.orchestrator import role_config
-from webapp.pipeline import sandbox
+from webapp.pipeline import sandbox, exec as pexec
 
 app = FastAPI(title="omp-agent web")
 
@@ -140,6 +140,14 @@ def _handle(method: str, params: dict) -> dict:
 
     if method == "tasks.events":
         return db.list_events(params["task_id"])
+
+    if method == "tasks.cancel":
+        tid = params.get("task_id")
+        if not tid:
+            return {"error": "task_id required"}
+        cancelled = pexec.cancel_build(tid)
+        db.update_task_state(tid, "cancelling")
+        return {"cancelled": cancelled}
 
     if method == "deny.log":
         return {"entries": sandbox.read_deny_log()}

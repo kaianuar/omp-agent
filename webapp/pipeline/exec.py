@@ -65,6 +65,24 @@ def _builder_cmd(recipe_path: str, repo_path: str) -> list[str]:
     ]
 
 
+# Active subprocess handles per task (for cancellation).
+_ACTIVE_PROCS: dict[int, "subprocess.Popen"] = {}
+_CANCEL_FLAGS: set[int] = set()
+
+
+def cancel_build(task_id: int) -> bool:
+    """Request cancellation of a running build. Kills the omp subprocess."""
+    _CANCEL_FLAGS.add(task_id)
+    proc = _ACTIVE_PROCS.get(task_id)
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            return True
+        except Exception:  # noqa: BLE001
+            pass
+    return False
+
+
 def _run_streaming(
     cmd: list[str], cwd: str, timeout: int, task_id: int, sink: EventSink
 ) -> tuple[int, str]:
@@ -72,17 +90,21 @@ def _run_streaming(
 
     Emits `build_progress` for lines that look like omp milestones (commits,
     phase transitions, PR creation) so the UI shows live build progress
-    instead of a silent wait.
+    instead of a silent wait. Honors cancellation (tasks.cancel).
     """
     import subprocess
 
     proc = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
+    _ACTIVE_PROCS[task_id] = proc
     lines: list[str] = []
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
+            if task_id in _CANCEL_FLAGS:
+                proc.kill()
+                return 130, "CANCELLED by user"
             line = line.rstrip()
             lines.append(line)
             _maybe_emit_progress(task_id, sink, line)
@@ -93,6 +115,8 @@ def _run_streaming(
         return 124, "TIMEOUT after %ss" % timeout
     except FileNotFoundError:
         return 127, "command not found: %s" % cmd[0]
+    finally:
+        _ACTIVE_PROCS.pop(task_id, None)
 
 
 def _maybe_emit_progress(task_id: int, sink: EventSink, line: str) -> None:
