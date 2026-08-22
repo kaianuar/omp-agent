@@ -242,6 +242,12 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClar
       return <div className="card card-build card-progress" key={ev.id} data-testid="card-progress">
         <span className="muted">▸</span> <code>{String(p.line ?? '')}</code>
       </div>;
+    case 'error':
+      return <div className="card card-fail" key={ev.id} data-testid="card-error">
+        <b>⚠️ Error</b>
+        <pre className="doc">{String(p.note ?? p.error ?? 'unknown error')}</pre>
+        <p className="hint muted">Check the model key / provider config (omp docs), then retry.</p>
+      </div>;
     case 'pr_ready':
       return <PrCard key={ev.id} ev={ev} />;
     case 'critic_verdict':

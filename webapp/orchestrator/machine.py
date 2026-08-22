@@ -113,9 +113,16 @@ class TaskRunner:
         recipe = _read_file(task.get("recipe_path")) if task.get("recipe_path") else ""
         db.update_task_state(self.task_id, "building")
         # Dispatch builder; v1: blocking call (runs omp), emits events.
-        pexec.dispatch_build(
+        build = pexec.dispatch_build(
             self.task_id, self.repo_path, self.scratch_dir, recipe, self._sink
         )
+        # Build failed (non-zero / timeout / missing) → surface an error.
+        if build.get("exit_code", 0) != 0:
+            self._sink(self.task_id, "error", {
+                "note": f"build failed (exit {build.get('exit_code')}): {build.get('output', '')[-400:]}",
+            })
+            db.update_task_state(self.task_id, "error")
+            return
         # REVIEW → auto-fix loop: critic FAIL (P0/P1) → re-dispatch builder
         # with verdicts as context → re-review, up to MAX_FIX_ROUNDS.
         db.update_task_state(self.task_id, "reviewing")
