@@ -98,6 +98,8 @@ body {
 }
 .wizard-card h2 { margin-bottom: 6px; font-size: 18px; }
 .wizard-card p { margin-bottom: 14px; font-size: 13px; }
+.wizard-card .hint { font-size: 12px; margin-top: 12px; }
+.wizard-card .hint a { color: var(--primary); }
 .role-picker { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
 .model-tools { display: flex; gap: 6px; }
 .model-tools .provider-filter {

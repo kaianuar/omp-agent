@@ -180,7 +180,11 @@ def _read_providers_yml() -> list[dict[str, str]]:
 
 
 def get_roles() -> dict[str, Any]:
-    """Current role assignments + whether the user has configured them."""
+    """Current role assignments + whether the user has configured them.
+
+    roles are exactly what the user chose (no defaults merged in — the
+    wizard forces an explicit pick for every role).
+    """
     roles: dict[str, str] = {}
     if ROLES_FILE.exists():
         try:
@@ -188,13 +192,19 @@ def get_roles() -> dict[str, Any]:
         except (json.JSONDecodeError, OSError):
             roles = {}
     configured = bool(roles)
-    merged = {**ROLE_DEFAULTS, **roles}  # defaults fill unset roles
-    return {"configured": configured, "roles": merged, "defaults": ROLE_DEFAULTS}
+    return {"configured": configured, "roles": roles, "defaults": ROLE_DEFAULTS}
 
 
 def set_roles(roles: dict[str, str]) -> dict[str, Any]:
-    """Persist role assignments. Returns the updated config."""
+    """Persist role assignments. Requires ALL roles to be explicitly chosen.
+
+    No defaults are applied — the user must pick a model for every role
+    (the wizard forces this). Returns the updated config.
+    """
+    missing = [r for r in ROLE_DEFAULTS if not roles.get(r)]
+    if missing:
+        raise ValueError(f"all roles must be chosen, missing: {missing}")
     valid = {k: v for k, v in roles.items() if k in ROLE_DEFAULTS and v}
     ROLES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    ROLES_FILE.write_text(json.dumps({**get_roles()["roles"], **valid}, indent=2))
+    ROLES_FILE.write_text(json.dumps(valid, indent=2))
     return get_roles()

@@ -28,13 +28,15 @@ function ClarifyBox({ taskId, onClarify }: { taskId: number; onClarify: (taskId:
   );
 }
 
+/** The three roles a user must assign models to. */
+const ROLES = ['orchestrator', 'builder', 'critic'] as const;
+
 /** Role → model picker (shared by the setup wizard + settings panel).
  * Includes a provider filter + model search (461+ models needs it). */
 function RolePicker({
-  roles, defaults, models, onChange,
+  roles, models, onChange,
 }: {
   roles: Record<string, string>;
-  defaults: Record<string, string>;
   models: { id: string; name: string; provider: string }[];
   onChange: (roles: Record<string, string>) => void;
 }) {
@@ -88,9 +90,10 @@ function RolePicker({
           <label>{ROLE_LABELS[role]}</label>
           <select
             data-testid={`role-${role}`}
-            value={roles[role] ?? defaults[role] ?? ''}
+            value={roles[role] ?? ''}
             onChange={(e) => set(role, e.target.value)}
           >
+            <option value="" disabled>— select a model —</option>
             {visible.map((m) => (
               <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>
             ))}
@@ -438,12 +441,22 @@ export default function App() {
             <p className="muted">Pick which model plays each role. These are the models omp has configured.</p>
             <RolePicker
               roles={rolesConfig.roles}
-              defaults={rolesConfig.defaults}
               models={models}
               onChange={(r) => setRolesConfig({ ...rolesConfig, roles: r })}
             />
+            <p className="hint muted">
+              No models listed? See the{' '}
+              <a href="https://github.com/can1357/oh-my-pi/blob/main/docs/models.md" target="_blank" rel="noreferrer">
+                omp docs on configuring providers &amp; models
+              </a>{' '}
+              (~/.omp/agent/models.yml).
+            </p>
             <div className="actions">
-              <button data-testid="wizard-save" onClick={() => void saveRoles(rolesConfig.roles)} disabled={models.length === 0}>
+              <button
+                data-testid="wizard-save"
+                onClick={() => void saveRoles(rolesConfig.roles)}
+                disabled={models.length === 0 || Object.keys(ROLES).some((r) => !rolesConfig.roles[r])}
+              >
                 Save
               </button>
             </div>
@@ -457,12 +470,17 @@ export default function App() {
             <h2>Settings — model roles</h2>
             <RolePicker
               roles={rolesConfig.roles}
-              defaults={rolesConfig.defaults}
               models={models}
               onChange={(r) => setRolesConfig({ ...rolesConfig, roles: r })}
             />
             <div className="actions">
-              <button data-testid="settings-save" onClick={() => void saveRoles(rolesConfig.roles)}>Save</button>
+              <button
+                data-testid="settings-save"
+                onClick={() => void saveRoles(rolesConfig.roles)}
+                disabled={Object.keys(ROLES).some((r) => !rolesConfig.roles[r])}
+              >
+                Save
+              </button>
               <button onClick={() => setShowSettings(false)}>Cancel</button>
             </div>
           </div>
