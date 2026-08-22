@@ -1,15 +1,22 @@
-"""FastAPI app — routes + websocket event stream.
+"""FastAPI app — WebSocket-only JSON-RPC.
 
-Thin layer: no business logic. Maps HTTP/ws to the orchestrator + data layer.
+Everything (projects, sessions, tasks, decide, clarify, fs browse, events)
+travels over ONE websocket as JSON messages:
+
+  Request:  {"id": 1, "method": "projects.list", "params": {}}
+  Response: {"id": 1, "result": [...]}
+  Error:    {"id": 1, "error": "message"}
+  Event:    {"type": "event", "event": {...}}   (live push, no id)
+
 v1: localhost only, no auth, one task at a time per session.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from webapp.data import db
 from webapp.api import events as ws_events_bus
@@ -21,129 +28,113 @@ app = FastAPI(title="omp-agent web")
 # Localhost-only dev; the frontend (vite dev server) is a different port.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5273", "http://127.0.0.1:5273"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 db.init_db()
 
+# ── RPC method handlers ────────────────────────────────────────────────
 
-# ── DTOs ───────────────────────────────────────────────────────────────
+def _handle(method: str, params: dict) -> dict:
+    """Dispatch an RPC method to the data/orchestrator layer."""
+    if method == "health":
+        return {"ok": True}
 
-class ProjectIn(BaseModel):
-    name: str
-    repo_path: str
-    scratch_path: str
+    if method == "projects.list":
+        return db.list_projects()
 
+    if method == "projects.create":
+        repo = Path(params["repo_path"]).resolve()
+        if not repo.is_dir():
+            return {"error": f"repo path not a directory: {repo}"}
+        pid = db.create_project(params["name"], str(repo), params["scratch_path"])
+        return db.get_project(pid) or {"error": "create failed"}
 
-class TaskIn(BaseModel):
-    message: str
+    if method == "fs.list":
+        base = Path(params.get("path", "")).expanduser().resolve() if params.get("path") else Path.home()
+        if not base.is_dir():
+            return {"error": f"not a directory: {base}"}
+        dirs = []
+        try:
+            for entry in sorted(os.scandir(base), key=lambda e: e.name.lower()):
+                if entry.is_dir() and not entry.name.startswith("."):
+                    dirs.append({"name": entry.name, "path": str(Path(entry.path))})
+        except PermissionError:
+            pass  # show what we can
+        return {"path": str(base), "dirs": dirs[:200]}
 
+    if method == "sessions.create":
+        project = db.get_project(params["project_id"])
+        if not project:
+            return {"error": "project not found"}
+        sid = db.create_session(params["project_id"])
+        return db.get_session(sid) or {"error": "create failed"}
 
-class DecideIn(BaseModel):
-    decision: str  # approve | reject | adjust
-    note: str = ""
+    if method == "sessions.list":
+        return db.list_sessions(params["project_id"])
 
+    if method == "sessions.tasks":
+        return db.list_tasks_by_session(params["session_id"])
 
-class ClarifyIn(BaseModel):
-    answers: str
+    if method == "tasks.create":
+        sid = params["session_id"]
+        session = db.get_session(sid)
+        if not session:
+            return {"error": "session not found"}
+        project = db.get_project(session["project_id"])
+        if not project:
+            return {"error": "project not found"}
+        task_id = db.create_task(sid, {"raw": params["message"]})
+        runner = TaskRunner(task_id, project)
+        runner.start(params["message"])
+        return db.get_task(task_id) or {"error": "task create failed"}
 
+    if method == "tasks.clarify":
+        tid = params["task_id"]
+        task = db.get_task(tid)
+        if not task:
+            return {"error": "task not found"}
+        project = db.get_project(_session_project_id(tid))
+        if not project:
+            return {"error": "project not found"}
+        TaskRunner(tid, project).clarify_answered(params["answers"])
+        return db.get_task(tid) or {}
 
-# ── REST ───────────────────────────────────────────────────────────────
-
-@app.get("/api/health")
-def health() -> dict:
-    return {"ok": True}
-
-
-@app.get("/api/projects")
-def projects() -> list[dict]:
-    return db.list_projects()
-
-
-@app.post("/api/projects")
-def create_project(body: ProjectIn) -> dict:
-    repo = Path(body.repo_path).resolve()
-    if not repo.is_dir():
-        return {"error": f"repo path not a directory: {repo}"}
-    pid = db.create_project(body.name, str(repo), body.scratch_path)
-    return db.get_project(pid) or {"error": "create failed"}
-
-
-@app.post("/api/projects/{pid}/sessions")
-def start_session(pid: int) -> dict:
-    project = db.get_project(pid)
-    if not project:
-        return {"error": "project not found"}
-    sid = db.create_session(pid)
-    return db.get_session(sid) or {"error": "create failed"}
-
-
-@app.get("/api/projects/{pid}/sessions")
-def project_sessions(pid: int) -> list[dict]:
-    return db.list_sessions(pid)
-
-
-@app.get("/api/sessions/{sid}/tasks")
-def session_tasks(sid: int) -> list[dict]:
-    return db.list_tasks_by_session(sid)
-
-
-@app.post("/api/sessions/{sid}/tasks")
-def new_task(sid: int, body: TaskIn) -> dict:
-    """Create a task and start the intake phase (blocking up to LLM call)."""
-    session = db.get_session(sid)
-    if not session:
-        return {"error": "session not found"}
-    project = db.get_project(session["project_id"])
-    if not project:
-        return {"error": "project not found"}
-    # v1: a fresh intent placeholder; run_intake fills it.
-    task_id = db.create_task(sid, {"raw": body.message})
-    runner = TaskRunner(task_id, project)
-    runner.start(body.message)
-    return db.get_task(task_id) or {"error": "task create failed"}
-
-
-@app.post("/api/tasks/{tid}/clarify")
-def clarify(tid: int, body: ClarifyIn) -> dict:
-    task = db.get_task(tid)
-    if not task:
-        return {"error": "task not found"}
-    project = db.get_project(_session_project_id(tid))
-    if not project:
-        return {"error": "project not found"}
-    TaskRunner(tid, project).clarify_answered(body.answers)
-    return db.get_task(tid) or {}
-
-
-@app.post("/api/tasks/{tid}/decide")
-def decide(tid: int, body: DecideIn) -> dict:
-    """CHECKPOINT decisions: design approve/reject, recipe approve, etc.
-
-    Returns immediately; the build chain (recipe → build → review → fix →
-    verify) runs in a background thread so the UI gets instant feedback and
-    polls /events for progress.
-    """
-    task = db.get_task(tid)
-    if not task:
-        return {"error": "task not found"}
-    project = db.get_project(_session_project_id(tid))
-    if not project:
-        return {"error": "project not found"}
-    runner = TaskRunner(tid, project)
-    state = task["state"]
-    if state == "awaiting_design_approval":
-        if body.decision == "approve":
-            db.update_task_state(tid, "recipe")
+    if method == "tasks.decide":
+        tid = params["task_id"]
+        task = db.get_task(tid)
+        if not task:
+            return {"error": "task not found"}
+        project = db.get_project(_session_project_id(tid))
+        if not project:
+            return {"error": "project not found"}
+        runner = TaskRunner(tid, project)
+        state = task["state"]
+        decision = params["decision"]
+        if state == "awaiting_design_approval":
+            if decision == "approve":
+                db.update_task_state(tid, "recipe")
+                _spawn_build_chain(runner)
+            else:
+                runner.design_decided("reject", params.get("note", ""))
+        elif state == "awaiting_recipe_approval" and decision == "approve":
+            db.update_task_state(tid, "building")
             _spawn_build_chain(runner)
-        else:
-            runner.design_decided("reject", body.note)
-    elif state == "awaiting_recipe_approval" and body.decision == "approve":
-        db.update_task_state(tid, "building")
-        _spawn_build_chain(runner)
-    return db.get_task(tid) or {}
+        return db.get_task(tid) or {}
+
+    if method == "tasks.get":
+        task = db.get_task(params["task_id"])
+        return task or {"error": "task not found"}
+
+    if method == "tasks.events":
+        return db.list_events(params["task_id"])
+
+    if method == "deny.log":
+        return {"entries": sandbox.read_deny_log()}
+
+    return {"error": f"unknown method: {method}"}
 
 
 def _spawn_build_chain(runner: TaskRunner) -> None:
@@ -160,61 +151,71 @@ def _spawn_build_chain(runner: TaskRunner) -> None:
     t.start()
 
 
-@app.get("/api/tasks/{tid}/events")
-def task_events(tid: int) -> list[dict]:
-    return db.list_events(tid)
-
-
-@app.get("/api/tasks/{tid}")
-def get_task(tid: int) -> dict:
-    task = db.get_task(tid)
-    if not task:
-        return {"error": "task not found"}
-    return task
-
-
-@app.get("/api/tasks/{tid}/artifacts")
-def task_artifacts(tid: int) -> dict:
-    task = db.get_task(tid)
-    if not task:
-        return {"error": "task not found"}
-    return {
-        "design_path": task.get("design_path"),
-        "recipe_path": task.get("recipe_path"),
-    }
-
-
-@app.get("/api/deny-log")
-def deny_log() -> dict:
-    return {"entries": sandbox.read_deny_log()}
-
-
 # ── WebSocket ──────────────────────────────────────────────────────────
 
-@app.websocket("/ws/sessions/{sid}")
-async def ws_events(ws: WebSocket, sid: int):
-    """Push Event stream for a session. Replays recent events, then live-pushes."""
+@app.websocket("/ws")
+async def ws_rpc(ws: WebSocket):
+    """Single websocket: JSON-RPC requests + live event push."""
     await ws.accept()
-    session = db.get_session(sid)
-    if not session:
-        await ws.send_json({"error": "session not found"})
-        await ws.close()
-        return
-    ws_events_bus.connect(sid, ws)
-    try:
-        # Replay the session's task events (latest task) so a reconnecting
-        # client gets history; then live events arrive via the bus.
+    # Events are pushed per-session; this socket handles the session's
+    # live stream once a session is bound via sessions.bind.
+    bound_session: int | None = None
+
+    async def push_to_self(event: dict) -> None:
+        try:
+            await ws.send_json({"type": "event", "event": event})
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Subscribe the current socket to a session's live events.
+    async def bind(sid: int) -> None:
+        nonlocal bound_session
+        if bound_session is not None:
+            ws_events_bus.disconnect(bound_session, ws)
+        bound_session = sid
+        ws_events_bus.connect(sid, ws)
+        # Replay the session's task events (latest task) for history.
         tasks = db.list_tasks_by_session(sid)
         for t in tasks[-1:]:
             for ev in db.list_events(t["id"]):
-                await ws.send_json(ev)
-        # Keep the connection open; the bus pushes new events to us.
+                await push_to_self(ev)
+
+    try:
         while True:
-            await ws.receive_text()
+            msg = await ws.receive_json()
+            method = msg.get("method", "")
+            params = msg.get("params", {}) or {}
+            rid = msg.get("id")
+
+            # sessions.bind binds this socket to a session's live stream.
+            if method == "sessions.bind":
+                sid = params.get("session_id")
+                if sid is not None:
+                    await bind(sid)
+                    if rid is not None:
+                        await ws.send_json({"id": rid, "result": {"bound": sid}})
+                continue
+
+            try:
+                result = _handle(method, params)
+            except Exception as e:  # noqa: BLE001 — never kill the socket
+                result = {"error": f"internal: {e}"}
+
+            # If it's a task method, also bind to the session for live events.
+            if method == "sessions.create" and "id" in (result or {}):
+                await bind(result["id"])
+            if method == "tasks.create" and "id" in (result or {}):
+                task = db.get_task(result["id"])
+                if task:
+                    await bind(task["session_id"])
+
+            if rid is not None:
+                await ws.send_json({"id": rid, "result": result})
     except WebSocketDisconnect:
         pass
     finally:
-        ws_events_bus.disconnect(sid, ws)
+        if bound_session is not None:
+            ws_events_bus.disconnect(bound_session, ws)
 
 
 # ── helpers ────────────────────────────────────────────────────────────

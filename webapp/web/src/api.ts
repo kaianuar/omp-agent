@@ -1,5 +1,11 @@
-// Thin API client for the omp-agent webapp backend.
-// v1: localhost only (the backend binds 127.0.0.1).
+// Thin API client for the omp-agent webapp — WebSocket-only JSON-RPC.
+//
+// All calls travel over ONE websocket as JSON messages:
+//   Request:  {"id": 1, "method": "projects.list", "params": {}}
+//   Response: {"id": 1, "result": [...]}
+//   Event:    {"type": "event", "event": {...}}   (live push, handled by onEvent)
+//
+// The method signatures match the old REST client, so callers are unchanged.
 
 export interface Project {
   id: number;
@@ -35,64 +41,115 @@ export interface Event {
   ts: string;
 }
 
-async function req<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+type Handler = (ev: Event) => void;
+
+class RpcClient {
+  private ws: WebSocket | null = null;
+  private nextId = 1;
+  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private onEventHandler: Handler | null = null;
+  private connected: Promise<void> | null = null;
+
+  /** Connect (idempotent). Resolves when the socket is open. */
+  connect(): Promise<void> {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) return Promise.resolve();
+    if (this.connected) return this.connected;
+
+    this.connected = new Promise((resolve, reject) => {
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
+      this.ws = ws;
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error('ws connection failed'));
+      ws.onmessage = (msg) => {
+        let data: Record<string, unknown>;
+        try { data = JSON.parse(msg.data as string); } catch { return; }
+        if (data.type === 'event') {
+          this.onEventHandler?.(data.event as Event);
+          return;
+        }
+        const id = data.id as number;
+        const p = this.pending.get(id);
+        if (!p) return;
+        this.pending.delete(id);
+        if (data.error) p.reject(new Error(String(data.error)));
+        else p.resolve(data.result);
+      };
+      ws.onclose = () => {
+        this.ws = null;
+        this.connected = null;
+        // Reject all pending (the caller can retry).
+        for (const [, p] of this.pending) p.reject(new Error('ws closed'));
+        this.pending.clear();
+      };
+    });
+    return this.connected;
   }
-  return res.json() as Promise<T>;
+
+  /** Set the live-event handler (called for every pushed event). */
+  onEvent(h: Handler) { this.onEventHandler = h; }
+
+  /** Call an RPC method and await its correlated response. */
+  async call<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    await this.connect();
+    const id = this.nextId++;
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      this.ws?.send(JSON.stringify({ id, method, params }));
+      // Safety timeout (builds can take minutes; RPC itself is fast).
+      setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error(`rpc timeout: ${method}`));
+        }
+      }, 30_000);
+    });
+  }
+
+  /** Bind the socket to a session (starts live event push + history replay). */
+  bind(sessionId: number) {
+    void this.call('sessions.bind', { session_id: sessionId }).catch(() => undefined);
+  }
 }
 
-export const api = {
-  health: () => req<{ ok: boolean }>('/api/health'),
+const rpc = new RpcClient();
 
-  listProjects: () => req<Project[]>('/api/projects'),
+export const api = {
+  onEvent: (h: Handler) => rpc.onEvent(h),
+
+  bind: (sessionId: number) => rpc.bind(sessionId),
+
+  health: () => rpc.call<{ ok: boolean }>('health'),
+
+  listProjects: () => rpc.call<Project[]>('projects.list'),
 
   createProject: (name: string, repoPath: string, scratchPath: string) =>
-    req<Project>('/api/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name, repo_path: repoPath, scratch_path: scratchPath }),
-    }),
+    rpc.call<Project>('projects.create', { name, repo_path: repoPath, scratch_path: scratchPath }),
+
+  fsList: (path = '') =>
+    rpc.call<{ path: string; dirs: { name: string; path: string }[] }>('fs.list', { path }),
 
   startSession: (projectId: number) =>
-    req<Session>(`/api/projects/${projectId}/sessions`, { method: 'POST' }),
+    rpc.call<Session>('sessions.create', { project_id: projectId }),
 
   listSessions: (projectId: number) =>
-    req<Session[]>(`/api/projects/${projectId}/sessions`),
+    rpc.call<Session[]>('sessions.list', { project_id: projectId }),
 
   sessionTasks: (sessionId: number) =>
-    req<Task[]>(`/api/sessions/${sessionId}/tasks`),
+    rpc.call<Task[]>('sessions.tasks', { session_id: sessionId }),
 
   newTask: (sessionId: number, message: string) =>
-    req<Task>(`/api/sessions/${sessionId}/tasks`, {
-      method: 'POST',
-      body: JSON.stringify({ message }),
-    }),
+    rpc.call<Task>('tasks.create', { session_id: sessionId, message }),
 
   decide: (taskId: number, decision: string, note = '') =>
-    req<Task>(`/api/tasks/${taskId}/decide`, {
-      method: 'POST',
-      body: JSON.stringify({ decision, note }),
-    }),
+    rpc.call<Task>('tasks.decide', { task_id: taskId, decision, note }),
 
   clarify: (taskId: number, answers: string) =>
-    req<Task>(`/api/tasks/${taskId}/clarify`, {
-      method: 'POST',
-      body: JSON.stringify({ answers }),
-    }),
+    rpc.call<Task>('tasks.clarify', { task_id: taskId, answers }),
 
-  taskEvents: (taskId: number) => req<Event[]>(`/api/tasks/${taskId}/events`),
+  taskEvents: (taskId: number) => rpc.call<Event[]>('tasks.events', { task_id: taskId }),
 
-  getTask: (taskId: number) => req<Task>(`/api/tasks/${taskId}`),
+  getTask: (taskId: number) => rpc.call<Task>('tasks.get', { task_id: taskId }),
 
-  taskArtifacts: (taskId: number) =>
-    req<{ design_path: string | null; recipe_path: string | null }>(
-      `/api/tasks/${taskId}/artifacts`
-    ),
-
-  denyLog: () => req<{ entries: string[] }>('/api/deny-log'),
+  denyLog: () => rpc.call<{ entries: string[] }>('deny.log'),
 };

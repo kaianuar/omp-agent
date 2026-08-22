@@ -115,30 +115,24 @@ export default function App() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjName, setNewProjName] = useState('');
   const [newProjPath, setNewProjPath] = useState('');
-  const wsRef = useRef<WebSocket | null>(null);
+  const [browsePath, setBrowsePath] = useState('');
+  const [browseDirs, setBrowseDirs] = useState<{ name: string; path: string }[]>([]);
+  const [browsing, setBrowsing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Connect to the session's WS for live events (replaces polling).
+  // Subscribe to live events over the shared WS RPC socket.
   useEffect(() => {
-    if (!session) return;
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/sessions/${session.id}`);
-    wsRef.current = ws;
-    ws.onmessage = (msg) => {
-      try {
-        const ev = JSON.parse(msg.data as string) as Event;
-        setEvents((prev) => {
-          // Dedupe by id (replay may overlap with already-received events).
-          if (prev.some((e) => e.id === ev.id)) return prev;
-          return [...prev, ev];
-        });
-      } catch { /* non-JSON message, ignore */ }
-    };
-    ws.onclose = () => {
-      wsRef.current = null;
-      // Fall back to polling so the UI still updates if the socket drops.
-    };
-    return () => ws.close();
+    api.onEvent((ev) => {
+      setEvents((prev) => {
+        if (prev.some((e) => e.id === ev.id)) return prev;
+        return [...prev, ev];
+      });
+    });
+  }, []);
+
+  // Bind the socket to the current session (starts live push + replay).
+  useEffect(() => {
+    if (session) api.bind(session.id);
   }, [session?.id]);
 
   // Load all projects; auto-select the first (or create a default).
@@ -217,6 +211,33 @@ export default function App() {
     setNewProjName('');
     setNewProjPath('');
     await selectProject(p);
+  };
+
+  // Open the browse dialog at a path (defaults to home).
+  const openBrowse = async (path = '') => {
+    setBrowsing(true);
+    setBrowsePath('');
+    try {
+      const res = await api.fsList(path);
+      setBrowsePath(res.path);
+      setBrowseDirs(res.dirs);
+    } catch { setBrowseDirs([]); }
+  };
+
+  // Navigate into a directory in the browse dialog.
+  const browseInto = async (dirPath: string) => {
+    setBrowsing(true);
+    try {
+      const res = await api.fsList(dirPath);
+      setBrowsePath(res.path);
+      setBrowseDirs(res.dirs);
+    } catch { setBrowseDirs([]); }
+  };
+
+  // Pick a folder from the browse dialog as the project path.
+  const browsePick = (dirPath: string) => {
+    setNewProjPath(dirPath);
+    setBrowsing(false);
   };
 
   useEffect(() => {
@@ -319,7 +340,7 @@ export default function App() {
           </div>
           {!showNewProject ? (
             <button className="link-btn" data-testid="new-project-btn" onClick={() => setShowNewProject(true)}>
-              + New project
+              + Open project
             </button>
           ) : (
             <div className="new-project">
@@ -329,14 +350,41 @@ export default function App() {
                 value={newProjName}
                 onChange={(e) => setNewProjName(e.target.value)}
               />
-              <input
-                data-testid="new-proj-path"
-                placeholder="/path/to/repo"
-                value={newProjPath}
-                onChange={(e) => setNewProjPath(e.target.value)}
-              />
+              <div className="path-row">
+                <input
+                  data-testid="new-proj-path"
+                  placeholder="/path/to/repo"
+                  value={newProjPath}
+                  onChange={(e) => setNewProjPath(e.target.value)}
+                />
+                <button data-testid="browse-btn" onClick={() => void openBrowse()}>Browse…</button>
+              </div>
+              {browsing && (
+                <div className="browse-dialog" data-testid="browse-dialog">
+                  <div className="browse-path">{browsePath || '…'}</div>
+                  <div className="browse-dirs">
+                    {browsePath && (
+                      <button className="browse-up" data-testid="browse-up" onClick={() => void browseInto(browsePath.replace(/\/[^/]+$/, '') || '/')}>
+                        ↑ ..
+                      </button>
+                    )}
+                    {browseDirs.map((d) => (
+                      <div key={d.path} className="browse-item">
+                        <button className="browse-into" data-testid={`browse-into-${d.name}`} onClick={() => void browseInto(d.path)}>
+                          📁 {d.name}
+                        </button>
+                        <button className="browse-pick" data-testid={`browse-pick-${d.name}`} onClick={() => browsePick(d.path)}>
+                          Select
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="actions">
-                <button data-testid="new-proj-create" onClick={() => void createProject()}>Create</button>
+                <button data-testid="new-proj-create" onClick={() => void createProject()} disabled={!newProjName.trim() || !newProjPath.trim()}>
+                  Create
+                </button>
                 <button onClick={() => setShowNewProject(false)}>Cancel</button>
               </div>
             </div>
