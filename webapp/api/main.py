@@ -22,7 +22,7 @@ from webapp.data import db
 from webapp.api import events as ws_events_bus
 from webapp.orchestrator.machine import TaskRunner
 from webapp.orchestrator import role_config
-from webapp.pipeline import sandbox, exec as pexec
+from webapp.pipeline import sandbox, exec as pexec, preview as pexec_preview
 
 app = FastAPI(title="omp-agent web")
 
@@ -151,6 +151,21 @@ def _handle(method: str, params: dict) -> dict:
 
     if method == "deny.log":
         return {"entries": sandbox.read_deny_log()}
+
+    if method == "preview.start":
+        repo = params.get("repo_path")
+        if not repo:
+            return {"error": "repo_path required"}
+        return pexec_preview.start_preview(repo)
+
+    if method == "preview.stop":
+        repo = params.get("repo_path")
+        if not repo:
+            return {"error": "repo_path required"}
+        return pexec_preview.stop_preview(repo)
+
+    if method == "preview.list":
+        return pexec_preview.list_previews()
 
     return {"error": f"unknown method: {method}"}
 

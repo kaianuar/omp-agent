@@ -306,6 +306,10 @@ export default function App() {
   } | null>(null);
   const [models, setModels] = useState<{ id: string; name: string; provider: string }[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewStack, setPreviewStack] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Apply + persist the theme.
@@ -338,6 +342,33 @@ export default function App() {
   const cancelRun = async () => {
     if (!task || !busy) return;
     try { await api.cancelTask(task.id); } catch { /* ignore */ }
+  };
+
+  // Toggle the live preview pane for the current project.
+  const togglePreview = async () => {
+    if (!project) return;
+    if (previewUrl) {
+      await api.stopPreview(project.repo_path);
+      setPreviewUrl(null);
+      setPreviewStack(null);
+      setPreviewError(null);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const r = await api.startPreview(project.repo_path);
+      if (r.error) {
+        setPreviewError(r.error);
+      } else {
+        setPreviewUrl(r.url);
+        setPreviewStack(r.stack);
+      }
+    } catch (e) {
+      setPreviewError(String(e));
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   // Subscribe to live events over the shared WS RPC socket.
@@ -696,6 +727,19 @@ export default function App() {
           <div className="muted">{task?.state ?? 'idle'}</div>
         </div>
         <div className="rail-section">
+          <b>Preview</b>
+          {previewError ? (
+            <div className="tiny muted" data-testid="preview-error">{previewError}</div>
+          ) : previewUrl ? (
+            <div className="tiny" data-testid="preview-on">{previewStack} — <a href={previewUrl} target="_blank" rel="noreferrer">open</a></div>
+          ) : (
+            <div className="tiny muted">start the app's dev server</div>
+          )}
+          <button className="link-btn" data-testid="preview-btn" onClick={() => void togglePreview()} disabled={previewLoading}>
+            {previewLoading ? 'Starting…' : previewUrl ? '■ Stop preview' : '▶ Preview'}
+          </button>
+        </div>
+        <div className="rail-section">
           <b>Scratch deny-log</b>
           <div className="tiny muted">
             {denyLog.length === 0 ? '(none — no blocked writes)' : denyLog.slice(-3).map((l, i) => <div key={i}>{l}</div>)}
@@ -739,6 +783,12 @@ export default function App() {
           )}
         </footer>
       </main>
+
+      {previewUrl && (
+        <aside className="preview-pane" data-testid="preview-pane">
+          <iframe src={previewUrl} title="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+        </aside>
+      )}
     </div>
   );
 }

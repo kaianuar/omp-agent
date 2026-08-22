@@ -171,4 +171,10 @@ export const api = {
   getTask: (taskId: number) => rpc.call<Task>('tasks.get', { task_id: taskId }),
 
   denyLog: () => rpc.call<{ entries: string[] }>('deny.log'),
+
+  startPreview: (repoPath: string) =>
+    rpc.call<{ url: string; stack: string; already?: boolean; error?: string }>('preview.start', { repo_path: repoPath }),
+
+  stopPreview: (repoPath: string) =>
+    rpc.call<{ stopped: boolean }>('preview.stop', { repo_path: repoPath }),
 };
