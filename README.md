@@ -1,16 +1,31 @@
 # omp-agent
 
-A **local-first AI software studio**: open any existing codebase, talk to an
-orchestrator in a chat UI, and it designs, builds, reviews, and fixes features
-for you — with you approving at every checkpoint.
+A **power-up for [omp](https://omp.sh) (Oh My Pi)** — not a replacement.
+
+Out of the box, omp is a single agent: *you* are the builder, the critic, the
+reviewer. You read the diff, you judge the design, you catch the regressions.
+omp-agent takes over those roles so you move up to manager: you decide **what**
+to build and **when to approve**; the team does the rest.
 
 ```
-Web UI (chat + cards + approve/reject)
-   ↓  one websocket (JSON-RPC + live events)
-Orchestrator (read-only brain: research, design, recipe, verify)
-   ↓  dispatches recipes
-Pipeline (omp builder → critic review → auto-fix → verify → PR)
+        YOU  (steer + approve)
+         │  one websocket (JSON-RPC + live events)
+         ▼
+   Orchestrator (read-only brain: research, design, recipe)
+         │  dispatches recipes
+         ▼
+   Pipeline (omp builder → critic review → auto-fix → verify → PR)
 ```
+
+Concretely, omp-agent adds the roles omp doesn't ship:
+
+- **Orchestrator** — a read-only brain that researches the repo, clarifies
+  what you want, and designs the approach before any code exists.
+- **Builder** — omp itself, driven by a recipe instead of a raw prompt.
+- **Critic** — an independent adversarial reviewer (P0-P4) with a bounded
+  auto-fix loop, so regressions get caught and fixed before you see them.
+- **Gates** — hard test gate, visual/functional gate, with an issue ledger
+  that prevents the "re-raise the same problem forever" deadlock.
 
 - **Open any existing folder** (browse dialog or path) — it learns the repo
   from its AGENTS.md / README / backlogs.
@@ -23,8 +38,9 @@ Pipeline (omp builder → critic review → auto-fix → verify → PR)
 - **Live**: everything streams over one WebSocket — intake, design, build
   progress (commits as they land), PR + diff, critic verdicts, verify
   checklist — no polling, no page reloads.
-- **Local-first**: runs on your machine, your models, your code. The
-  orchestrator can never write to your project — only to scratch (/tmp).
+- **Local-first**: runs on your machine, your models, your code — no cloud,
+  no vendor lock-in. The orchestrator can never write to your project — only
+  to scratch (/tmp).
 - **You stay in control**: cancel a long build anytime; failures surface as
   clear error cards (with a pointer to fix the provider config), not silent
   timeouts.
