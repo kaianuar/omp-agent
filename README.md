@@ -16,11 +16,18 @@ Pipeline (omp builder → critic review → auto-fix → verify → PR)
   from its AGENTS.md / README / backlogs.
 - **Conversational**: tell it what you want ("add a junk detector", "the dupes
   panel feels cluttered"), answer its clarifying questions, approve the design.
-- **Review-gated**: a critic reviews every PR (P0-P4), and the builder
-  auto-fixes blockers before it comes back to you.
-- **Live**: everything streams over one WebSocket — no polling, no page reloads.
+- **Adjustable designs**: not happy with the proposal? Hit **Adjust…**, tell it
+  what to change, and it regenerates the design addressing your feedback.
+- **Review-gated**: a critic reviews every PR (P0-P4) with the findings shown
+  inline — and the builder auto-fixes blockers before it comes back to you.
+- **Live**: everything streams over one WebSocket — intake, design, build
+  progress (commits as they land), PR + diff, critic verdicts, verify
+  checklist — no polling, no page reloads.
 - **Local-first**: runs on your machine, your models, your code. The
   orchestrator can never write to your project — only to scratch (/tmp).
+- **You stay in control**: cancel a long build anytime; failures surface as
+  clear error cards (with a pointer to fix the provider config), not silent
+  timeouts.
 
 > The engine underneath is a fully-automated, omp-native engineering pipeline
 > (test gate → adversarial review → e2e gate → steer checkpoint). See
