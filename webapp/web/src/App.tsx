@@ -310,7 +310,18 @@ export default function App() {
   const [previewStack, setPreviewStack] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0); // bump to reload the iframe
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-refresh the preview pane when a build lands (build_done /
+  // critic_passed / verify_result arrive over the websocket).
+  useEffect(() => {
+    if (!previewUrl) return;
+    const landed = events.some((e) =>
+      ['build_done', 'critic_passed', 'verify_result'].includes(e.kind)
+    );
+    if (landed) setPreviewKey((k) => k + 1);
+  }, [events, previewUrl]);
 
   // Apply + persist the theme.
   useEffect(() => {
@@ -786,7 +797,12 @@ export default function App() {
 
       {previewUrl && (
         <aside className="preview-pane" data-testid="preview-pane">
-          <iframe src={previewUrl} title="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+          <iframe
+            key={previewKey}
+            src={previewKey ? `${previewUrl}?t=${previewKey}` : previewUrl}
+            title="preview"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
         </aside>
       )}
     </div>

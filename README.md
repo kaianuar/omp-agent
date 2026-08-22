@@ -62,6 +62,10 @@ proposal with Approve/Reject — all streamed live over one WebSocket.*
 *First-run model setup: pick which model plays each role, filtered by
 provider and searchable across all of omp's models.*
 
+![Live preview](docs/screenshots/webui-preview.png)
+*The app under construction, rendered live in a side pane (Vite/Next/static
+auto-detected) — watch the build land without leaving the browser.*
+
 ## Model roles (setup wizard + settings)
 
 On first run, a **setup wizard** asks you to pick which model plays each of
