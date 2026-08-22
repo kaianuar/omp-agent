@@ -170,6 +170,10 @@ function cardFor(ev: Event, onDecide: (d: string, note?: string) => void, onClar
       return <div className="card card-build" key={ev.id} data-testid="card-build">
         <b>Building…</b> <span className="muted">recipe dispatched to builder</span>
       </div>;
+    case 'build_progress':
+      return <div className="card card-build card-progress" key={ev.id} data-testid="card-progress">
+        <span className="muted">▸</span> <code>{String(p.line ?? '')}</code>
+      </div>;
     case 'pr_ready':
       return <div className="card" key={ev.id} data-testid="card-pr">
         <b>PR open:</b> <a href={String(p.url)} target="_blank" rel="noreferrer">{String(p.url)}</a>

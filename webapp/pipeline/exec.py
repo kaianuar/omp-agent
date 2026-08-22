@@ -65,14 +65,51 @@ def _builder_cmd(recipe_path: str, repo_path: str) -> list[str]:
     ]
 
 
+def _run_streaming(
+    cmd: list[str], cwd: str, timeout: int, task_id: int, sink: EventSink
+) -> tuple[int, str]:
+    """Run a command, reading output line-by-line and emitting progress events.
+
+    Emits `build_progress` for lines that look like omp milestones (commits,
+    phase transitions, PR creation) so the UI shows live build progress
+    instead of a silent wait.
+    """
+    import subprocess
+
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+    lines: list[str] = []
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.rstrip()
+            lines.append(line)
+            _maybe_emit_progress(task_id, sink, line)
+        proc.wait(timeout=timeout)
+        return proc.returncode, "\n".join(lines)[-4000:]
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return 124, "TIMEOUT after %ss" % timeout
+    except FileNotFoundError:
+        return 127, "command not found: %s" % cmd[0]
+
+
+def _maybe_emit_progress(task_id: int, sink: EventSink, line: str) -> None:
+    """Emit a build_progress event for omp milestone lines."""
+    low = line.lower()
+    if any(m in low for m in ("commit", "branch", "pr:", "working", "done.", "feat(", "fix(")):
+        sink(task_id, "build_progress", {"line": line[:300]})
+
+
 def dispatch_build(
     task_id: int, repo_path: str, scratch_dir: str, recipe: str, sink: EventSink
 ) -> dict[str, Any]:
     """Run the builder (omp) with the recipe. Emits build events.
 
-    v1: blocking. The recipe is written to the project's scratch dir first
-    (the only file the builder needs to read) — but the builder writes code
-    into the repo, which is its job.
+    The recipe is written to the project's scratch dir first (the only file
+    the builder needs to read) — but the builder writes code into the repo,
+    which is its job. Output streams line-by-line → build_progress events.
     """
     # Write recipe to scratch so the builder has a stable path to read.
     from webapp.pipeline import sandbox
@@ -80,7 +117,7 @@ def dispatch_build(
     recipe_path = sandbox.sandboxed_write(scratch_dir, repo_path, "recipe.md", recipe)
     sink(task_id, "build_started", {"recipe_path": str(recipe_path)})
     cmd = _builder_cmd(str(recipe_path), repo_path)
-    code, output = _run(cmd, repo_path, BUILD_TIMEOUT_S)
+    code, output = _run_streaming(cmd, repo_path, BUILD_TIMEOUT_S, task_id, sink)
     sink(task_id, "build_done", {"exit_code": code, "output": output})
     return {"exit_code": code, "output": output}
 

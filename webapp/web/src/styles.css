@@ -288,6 +288,8 @@ body {
 .card-ok { border-left: 3px solid var(--ok); }
 .card-warn { border-left: 3px solid var(--warn); }
 .card-dim { opacity: 0.7; }
+.card-progress { padding: 6px 12px; font-size: 12px; font-family: ui-monospace, monospace; }
+.card-progress code { color: var(--text); }
 .card ul { margin: 6px 0 0 18px; }
 
 .doc {
