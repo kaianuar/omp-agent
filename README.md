@@ -26,6 +26,15 @@ Pipeline (omp builder → critic review → auto-fix → verify → PR)
 > (test gate → adversarial review → e2e gate → steer checkpoint). See
 > [PIPELINE.md](PIPELINE.md) for the engine; this README leads with the product.
 
+## Screenshots
+
+![Home](docs/screenshots/webui-home.png)
+*The workspace: project + session pickers, live deny-log, chat composer.*
+
+![Design conversation](docs/screenshots/webui-conversation.png)
+*A feature request through the loop: intake → clarifying questions → design
+proposal with Approve/Reject — all streamed live over one WebSocket.*
+
 ## Quick start (web UI)
 
 ```bash
