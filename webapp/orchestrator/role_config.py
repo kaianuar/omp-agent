@@ -103,7 +103,11 @@ def list_models() -> list[dict[str, str]]:
     models: list[dict[str, str]] = []
     for prov, conf in yml.get("providers", {}).items():
         for m in conf.get("models", []):
-            models.append({"id": m["id"], "name": m.get("name", m["id"])})
+            models.append({
+                "id": m["id"],
+                "name": m.get("name", m["id"]),
+                "provider": (m["id"].split("/", 1)[0] if "/" in m["id"] else prov),
+            })
     return models
 
 
@@ -139,7 +143,13 @@ def _list_models_api() -> list[dict[str, str]]:
             for m in models or []:
                 mid = m.get("id") or m.get("name")
                 if mid:
-                    out.append({"id": mid, "name": m.get("name") or mid})
+                    out.append({
+                        "id": mid,
+                        "name": m.get("name") or mid,
+                        # provider = the id's prefix (before the first '/'),
+                        # e.g. 'xiaomi/mimo-v2.5' → 'xiaomi'.
+                        "provider": (mid.split("/", 1)[0] if "/" in mid else prov.get("name", "other")),
+                    })
         except Exception:  # noqa: BLE001 — skip a broken provider, keep the rest
             continue
     # Dedupe by id (a model may appear on multiple providers).

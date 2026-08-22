@@ -121,7 +121,8 @@ export const api = {
 
   health: () => rpc.call<{ ok: boolean }>('health'),
 
-  listModels: () => rpc.call<{ models: { id: string; name: string }[] }>('models.list'),
+  listModels: () =>
+    rpc.call<{ models: { id: string; name: string; provider: string }[] }>('models.list'),
 
   getRoles: () =>
     rpc.call<{

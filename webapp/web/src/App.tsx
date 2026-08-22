@@ -28,23 +28,61 @@ function ClarifyBox({ taskId, onClarify }: { taskId: number; onClarify: (taskId:
   );
 }
 
-/** Role → model picker (shared by the setup wizard + settings panel). */
+/** Role → model picker (shared by the setup wizard + settings panel).
+ * Includes a provider filter + model search (461+ models needs it). */
 function RolePicker({
   roles, defaults, models, onChange,
 }: {
   roles: Record<string, string>;
   defaults: Record<string, string>;
-  models: { id: string; name: string }[];
+  models: { id: string; name: string; provider: string }[];
   onChange: (roles: Record<string, string>) => void;
 }) {
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+
   const ROLE_LABELS: Record<string, string> = {
     orchestrator: 'Orchestrator (brain: intake/design/recipe)',
     builder: 'Builder (writes code)',
     critic: 'Critic (adversarial review)',
   };
+
+  // Providers derived from the model ids (deduped, sorted).
+  const providers = Array.from(new Set(models.map((m) => m.provider))).sort();
+
+  // Apply provider filter + name/id search.
+  const visible = models.filter((m) => {
+    if (filter !== 'all' && m.provider !== filter) return false;
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
   const set = (role: string, id: string) => onChange({ ...roles, [role]: id });
   return (
     <div className="role-picker" data-testid="role-picker">
+      <div className="model-tools">
+        <select
+          className="provider-filter"
+          data-testid="provider-filter"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        >
+          <option value="all">All providers ({models.length})</option>
+          {providers.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <input
+          className="model-search"
+          data-testid="model-search"
+          placeholder="Search model…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
       {Object.keys(ROLE_LABELS).map((role) => (
         <div className="role-row" key={role}>
           <label>{ROLE_LABELS[role]}</label>
@@ -53,8 +91,8 @@ function RolePicker({
             value={roles[role] ?? defaults[role] ?? ''}
             onChange={(e) => set(role, e.target.value)}
           >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+            {visible.map((m) => (
+              <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>
             ))}
           </select>
         </div>
@@ -161,7 +199,7 @@ export default function App() {
     roles: Record<string, string>;
     defaults: Record<string, string>;
   } | null>(null);
-  const [models, setModels] = useState<{ id: string; name: string }[]>([]);
+  const [models, setModels] = useState<{ id: string; name: string; provider: string }[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
