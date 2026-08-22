@@ -35,6 +35,31 @@ Pipeline (omp builder → critic review → auto-fix → verify → PR)
 *A feature request through the loop: intake → clarifying questions → design
 proposal with Approve/Reject — all streamed live over one WebSocket.*
 
+![Model setup wizard](docs/screenshots/webui-setup-wizard.png)
+*First-run model setup: pick which model plays each role, filtered by
+provider and searchable across all of omp's models.*
+
+## Model roles (setup wizard + settings)
+
+On first run, a **setup wizard** asks you to pick which model plays each of
+the three roles:
+
+| Role | What it does | Default |
+|---|---|---|
+| **Orchestrator** | The brain: intake, design, recipe | `xiaomi/mimo-v2.5` |
+| **Builder** | Writes the code (dispatched per recipe) | `xiaomi/mimo-v2.5-pro` |
+| **Critic** | Adversarial review of every PR (P0-P4) | `meta/muse-spark-1.2-contributor` |
+
+- The model list comes **live from every provider omp is configured with**
+  (`~/.omp/agent/models.yml` → each provider's `/models` endpoint), so the
+  wizard always shows the current catalog. Filter by provider, search by name.
+- Choices persist to `webapp/data/roles.json` — the wizard only appears once.
+- After setup, the **⚙️ settings gear** (top of the left rail) reopens the
+  same picker to change roles anytime.
+- The saved roles are actually used: the orchestrator's LLM calls resolve
+  per-role (orchestrator / builder / critic), so changing a role changes
+  which model does that job.
+
 ## Quick start (web UI)
 
 ```bash
