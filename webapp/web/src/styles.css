@@ -13,6 +13,20 @@
   --border: #334155;
 }
 
+/* Light theme — token overrides (mirrors diskscope's data-theme pattern). */
+:root[data-theme="light"] {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --fail: #dc2626;
+  --border: #e2e8f0;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -36,6 +50,22 @@ body {
   overflow-y: auto;
 }
 .rail h2 { font-size: 18px; margin-bottom: 4px; }
+.rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.rail-header h2 { margin-bottom: 0; }
+.theme-toggle {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.theme-toggle:hover { background: var(--surface); }
 .rail-section { display: flex; flex-direction: column; gap: 4px; }
 .tiny { font-size: 11px; line-height: 1.5; word-break: break-all; }
 .muted { color: var(--muted); }
@@ -101,7 +131,7 @@ body {
 }
 .path-row button:hover { border-color: var(--primary); }
 .browse-dialog {
-  background: #0b1220;
+  background: var(--doc-bg, #0b1220);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px;
@@ -194,7 +224,8 @@ body {
 .card ul { margin: 6px 0 0 18px; }
 
 .doc {
-  background: #0b1220;
+  background: var(--doc-bg, #0b1220);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
   margin-top: 8px;
@@ -205,6 +236,7 @@ body {
   max-height: 260px;
   overflow-y: auto;
 }
+:root[data-theme="light"] .doc { --doc-bg: #f1f5f9; color: var(--text); }
 
 .actions { display: flex; gap: 8px; margin-top: 10px; }
 .actions button, .composer button {

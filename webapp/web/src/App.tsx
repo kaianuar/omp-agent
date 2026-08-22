@@ -118,7 +118,18 @@ export default function App() {
   const [browsePath, setBrowsePath] = useState('');
   const [browseDirs, setBrowseDirs] = useState<{ name: string; path: string }[]>([]);
   const [browsing, setBrowsing] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('omp-theme') as 'dark' | 'light') || 'dark'
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Apply + persist the theme.
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('omp-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   // Subscribe to live events over the shared WS RPC socket.
   useEffect(() => {
@@ -323,7 +334,12 @@ export default function App() {
   return (
     <div className="app" data-testid="app">
       <aside className="rail" data-testid="rail">
-        <h2>omp</h2>
+        <div className="rail-header">
+          <h2>omp</h2>
+          <button className="theme-toggle" data-testid="theme-toggle" onClick={toggleTheme} title="Toggle light/dark">
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
         <div className="rail-section">
           <b>Project</b>
           <select
