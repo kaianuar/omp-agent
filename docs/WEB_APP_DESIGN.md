@@ -22,14 +22,14 @@ Not a dashboard, not a terminal.
 ┌──────────────────────────────────────────────────────────┐
 │  FRONTEND  (React + Vite, localhost)                     │
 │  Chat + cards + approve/reject + live pipeline status    │
-│  websocket (streaming events) + REST (actions)           │
+│  ONE websocket: JSON-RPC calls + live event push         │
 ├──────────────────────────────────────────────────────────┤
 │  BACKEND  (FastAPI, Python)                              │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
 │  │  API layer  │→ │  Orchestrator│→ │  Pipeline exec │  │
-│  │  (routes,   │  │  (state      │  │  (dispatch omp,│  │
-│  │  ws, auth   │  │  machine +   │  │  run gates,    │  │
-│  │  (local))   │  │  LLM calls)  │  │  verify)       │  │
+│  │  (ws RPC    │  │  (state      │  │  (dispatch omp,│  │
+│  │  dispatcher,│  │  machine +   │  │  run gates,    │  │
+│  │  no REST)   │  │  LLM calls)  │  │  verify)       │  │
 │  └─────────────┘  └──────────────┘  └────────────────┘  │
 │        │                 │                 │            │
 │  ┌─────┴─────────────────┴─────────────────┴─────────┐   │
@@ -40,14 +40,16 @@ Not a dashboard, not a terminal.
 ```
 
 **Layer rules (the "clean" part):**
-- **API layer** — only routes/websockets/DTOs. No business logic. Thin.
+- **API layer** — one WebSocket endpoint (`/ws`), a JSON-RPC dispatcher.
+  No business logic. Thin.
 - **Orchestrator** — the brain (state machine from ORCHESTRATOR_BRAIN.md).
   Pure logic; no web knowledge; emits events.
 - **Pipeline exec** — talks to the real world: runs omp, runs gates, runs
   verify commands, writes scratch. Everything side-effectful lives here.
 - **Persistence** — SQLite via a thin data layer. Sessions/tasks/events.
 - **Direction of dependency:** API → Orchestrator → Pipeline exec → (files,
-  processes, DB). Never the reverse. Orchestrator knows nothing about HTTP.
+  processes, DB). Never the reverse. Orchestrator knows nothing about the
+  transport (WebSocket or otherwise).
 
 **Why this stays clean & minimal:**
 - 4 modules, each one job. No framework lock-in beyond FastAPI+SQLite.
@@ -78,20 +80,37 @@ Event        { id, task_id, ts, kind, payload(json) }
 
 ## 4. API surface (v1, minimal)
 
+**One WebSocket** (`/ws`). JSON-RPC-style messages, correlated by id:
+
 ```
-REST
-  POST   /api/projects              {name, repo_path} → bind a project
-  GET    /api/projects              list
-  POST   /api/projects/{id}/sessions            → start a session
-  POST   /api/sessions/{id}/tasks               {message} → new task (INTAKE)
-  POST   /api/tasks/{id}/decide      {decision: approve|adjust|reject, note?}
-  GET    /api/tasks/{id}/artifacts   → list scratch files (design/recipe)
-  GET    /api/tasks/{id}/events      → history (for reload)
-WebSocket
-  /ws/sessions/{id}   → server pushes Event stream (live cards)
+Request:   {"id": 1, "method": "projects.list", "params": {}}
+Response:  {"id": 1, "result": [...]}
+Error:     {"id": 1, "error": "message"}
+Event:     {"type": "event", "event": {...}}   (live push, no id)
+```
+
+Methods:
+
+```
+health            → {"ok": true}
+projects.list     → all bound projects
+projects.create   {name, repo_path, scratch_path} → project
+fs.list           {path?} → {path, dirs: [{name, path}]} (browse dialog)
+sessions.create   {project_id} → session
+sessions.list     {project_id} → sessions (newest first)
+sessions.tasks    {session_id} → tasks
+sessions.bind     {session_id} → subscribe socket to live events + replay
+tasks.create      {session_id, message} → task (starts INTAKE)
+tasks.get         {task_id} → task
+tasks.clarify     {task_id, answers} → task
+tasks.decide      {task_id, decision, note?} → task (approve|reject|adjust)
+tasks.events      {task_id} → event history
+deny.log          → sandbox deny-log entries
 ```
 
 That's it. No auth in v1 (localhost-only; bind 127.0.0.1). No multi-user.
+The frontend's `api.ts` is a thin RPC client over this one socket; the
+backend pushes live events to bound sockets as the orchestrator runs.
 
 ## 5. Frontend structure (React + Vite, minimal)
 
@@ -109,7 +128,7 @@ src/
     ScratchDrawer.tsx — collapsible: orchestrator's scratch files
   hooks/
     useTaskStream.ts  — websocket → event → card state
-  api.ts              — thin REST/ws client
+  api.ts              — thin WS JSON-RPC client (all calls over one socket)
   types.ts            — DTOs (Task, Event, etc.)
 ```
 
@@ -150,9 +169,8 @@ pipeline/
   sandbox.py       — permission checks (deny project writes, deny-log)
 api/
   __init__.py
-  main.py          — FastAPI app, routes
-  ws.py            — websocket event stream
-  dto.py           — pydantic request/response models
+  main.py          — FastAPI app, ONE websocket (/ws), RPC dispatcher
+  events.py        — event bus: per-session websocket fan-out
 data/
   db.py            — SQLite thin layer
 main.py            — entrypoint: uvicorn
@@ -164,17 +182,19 @@ insurance: if the UI direction shifts, the engine survives.
 
 ## 7. Streaming & events (the live feel)
 
-- Pipeline exec emits events (task_id, kind, payload) to an in-process
-  event bus (asyncio.Queue per session, or a simple pub/sub).
-- API layer forwards to the websocket.
-- Frontend: useTaskStream connects, maps kind → card, appends/updates.
-- Reload: GET /events replays history (SQLite persisted) → same cards.
+- `db.add_event` persists every event (SQLite) AND publishes it to the
+  session's websocket clients via `api/events.py` (per-session fan-out).
+- The socket bound to a session (`sessions.bind`) replays its recent task
+  events on connect, then receives live events as the orchestrator runs.
+- Frontend: `api.onEvent` maps kind → card, appends/updates. No polling.
 
 ## 8. v1 scope (what we build now)
 
 **In:**
-- Project binding (repo path + scratch dir).
-- One session per project, one task at a time (sequential).
+- Project binding (repo path + scratch dir) — open any existing folder
+  via typed path OR a browse dialog (fs.list).
+- Multiple sessions per project; session picker restores full history
+  (tasks, events, checkpoint state).
 - The full loop: intake → design card → approve → recipe → build (omp) →
   critic → verify → result card → merge button (gh pr merge).
 - Scratch drawer (design/recipe/test files).

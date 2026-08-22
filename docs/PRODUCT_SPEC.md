@@ -129,7 +129,7 @@ with the orchestrator role played manually (design docs, recipes, verification).
 
 - **Chat panel** — the conversation (user ↔ orchestrator), like a mini-Hermes.
 - **Pipeline view** — live status of gates, critic verdicts, diffs, PRs
-  (SSE/websocket stream from the engine).
+  (websocket event stream from the engine — live push, no polling).
 - **Approve / Adjust / Reject affordances** — the user is the final gate.
 - **Project binding** — "point me at a repo + API keys → I learn the codebase
   (AGENTS.md, structure) → you give feedback."
